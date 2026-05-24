@@ -25,6 +25,31 @@ def json_bytes(payload) -> bytes:
     return json.dumps(payload, indent=2).encode("utf-8")
 
 
+def clean_secret_value(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+
+    lowered = text.lower()
+    placeholder_markers = [
+        "your-",
+        "your/",
+        "your_",
+        "your.",
+        "example",
+        "if-you-have-one",
+        "replace_me",
+        "changeme",
+        "<",
+        ">",
+    ]
+    if any(marker in lowered for marker in placeholder_markers):
+        return None
+    return text
+
+
 def configure_spglobal_from_streamlit_secrets() -> None:
     try:
         secrets = st.secrets.get("spglobal", {})
@@ -43,8 +68,11 @@ def configure_spglobal_from_streamlit_secrets() -> None:
     }
     for env_key, secret_key in mapping.items():
         value = secrets.get(secret_key) if hasattr(secrets, "get") else None
-        if value:
-            os.environ[env_key] = str(value)
+        clean_value = clean_secret_value(value)
+        if clean_value:
+            os.environ[env_key] = clean_value
+        else:
+            os.environ.pop(env_key, None)
 
 
 def spglobal_is_configured() -> bool:

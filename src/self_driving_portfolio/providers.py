@@ -95,15 +95,40 @@ def _spglobal_capital_iq_universe(
 
 def _spglobal_config() -> dict[str, str | None]:
     return {
-        "base_url": os.getenv("SPGLOBAL_BASE_URL"),
-        "universe_endpoint": os.getenv("SPGLOBAL_UNIVERSE_ENDPOINT"),
-        "token_url": os.getenv("SPGLOBAL_TOKEN_URL"),
-        "api_key": os.getenv("SPGLOBAL_API_KEY"),
-        "api_key_header": os.getenv("SPGLOBAL_API_KEY_HEADER"),
-        "username": os.getenv("SPGLOBAL_USERNAME"),
-        "password": os.getenv("SPGLOBAL_PASSWORD"),
-        "timeout": os.getenv("SPGLOBAL_TIMEOUT", "20"),
+        "base_url": _clean_config_value(os.getenv("SPGLOBAL_BASE_URL")),
+        "universe_endpoint": _clean_config_value(os.getenv("SPGLOBAL_UNIVERSE_ENDPOINT")),
+        "token_url": _clean_config_value(os.getenv("SPGLOBAL_TOKEN_URL")),
+        "api_key": _clean_config_value(os.getenv("SPGLOBAL_API_KEY")),
+        "api_key_header": _clean_config_value(os.getenv("SPGLOBAL_API_KEY_HEADER")),
+        "username": _clean_config_value(os.getenv("SPGLOBAL_USERNAME")),
+        "password": _clean_config_value(os.getenv("SPGLOBAL_PASSWORD")),
+        "timeout": _clean_config_value(os.getenv("SPGLOBAL_TIMEOUT")) or "20",
     }
+
+
+def _clean_config_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+
+    lowered = text.lower()
+    placeholder_markers = [
+        "your-",
+        "your/",
+        "your_",
+        "your.",
+        "example",
+        "if-you-have-one",
+        "replace_me",
+        "changeme",
+        "<",
+        ">",
+    ]
+    if any(marker in lowered for marker in placeholder_markers):
+        return None
+    return text
 
 
 def _spglobal_headers(config: dict[str, str | None]) -> dict[str, str]:
