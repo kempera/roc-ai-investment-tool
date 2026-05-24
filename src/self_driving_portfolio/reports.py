@@ -36,6 +36,28 @@ def render_committee_memo(
         f"- {item.asset}: {percent(item.weight)} / {money(item.amount, request.currency)}"
         for item in allocations
     )
+    execution_rows = "\n".join(
+        "| "
+        + " | ".join(
+            [
+                item.asset,
+                item.ticker or "-",
+                item.isin or "-",
+                item.wkn or "-",
+                item.exchange or "-",
+                item.trading_currency or "-",
+                money(item.amount, request.currency),
+                f"[Yahoo]({item.yahoo_url})" if item.yahoo_url else "-",
+            ]
+        )
+        + " |"
+        for item in allocations
+    )
+    execution_notes = "\n".join(
+        f"- {item.asset}: {item.execution_note}"
+        for item in allocations
+        if item.execution_note
+    )
     rationale_lines = "\n".join(f"- {item}" for item in rationale)
     risk_lines = "\n".join(f"- {item}" for item in risks_to_monitor)
     invalidation_lines = "\n".join(f"- {item}" for item in invalid_if)
@@ -71,6 +93,16 @@ Invest gradually over the recommended phase-in schedule using the **{selected.me
 ## Recommended Allocation
 
 {allocation_lines}
+
+## Execution Details
+
+| Instrument | Ticker | ISIN | WKN | Exchange | Trading Currency | Amount | Yahoo Finance |
+| --- | --- | --- | --- | --- | --- | ---: | --- |
+{execution_rows}
+
+Execution notes:
+
+{execution_notes}
 
 ## Expected Risk And Return
 

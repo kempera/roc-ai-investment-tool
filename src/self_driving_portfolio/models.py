@@ -58,6 +58,14 @@ class AssetAssumption(BaseModel):
     ticker: str
     name: str
     asset_class: str
+    isin: str | None = None
+    wkn: str | None = None
+    security_type: str = "ETF"
+    exchange: str | None = None
+    trading_currency: str | None = None
+    yahoo_ticker: str | None = None
+    yahoo_url: str | None = None
+    execution_note: str | None = None
     theme_exposure: float
     expected_return: float
     expected_volatility: float
@@ -87,6 +95,15 @@ class AllocationItem(BaseModel):
     asset: str
     weight: float
     amount: float
+    ticker: str | None = None
+    isin: str | None = None
+    wkn: str | None = None
+    security_type: str | None = None
+    exchange: str | None = None
+    trading_currency: str | None = None
+    yahoo_ticker: str | None = None
+    yahoo_url: str | None = None
+    execution_note: str | None = None
 
 
 class CommitteeResult(BaseModel):

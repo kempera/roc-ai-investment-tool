@@ -38,15 +38,28 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
 
     selected = sorted(approved_candidates or candidates, key=cio_score, reverse=True)[0]
 
-    allocations = [
-        AllocationItem(
-            asset=asset,
-            weight=round(weight, 4),
-            amount=round(weight * request.budget, 2),
+    assumption_by_name = {asset.name: asset for asset in assumptions}
+    allocations = []
+    for asset_name, weight in selected.weights.items():
+        if weight <= 0.001:
+            continue
+        assumption = assumption_by_name.get(asset_name)
+        allocations.append(
+            AllocationItem(
+                asset=asset_name,
+                weight=round(weight, 4),
+                amount=round(weight * request.budget, 2),
+                ticker=assumption.ticker if assumption else None,
+                isin=assumption.isin if assumption else None,
+                wkn=assumption.wkn if assumption else None,
+                security_type=assumption.security_type if assumption else None,
+                exchange=assumption.exchange if assumption else None,
+                trading_currency=assumption.trading_currency if assumption else None,
+                yahoo_ticker=assumption.yahoo_ticker if assumption else None,
+                yahoo_url=assumption.yahoo_url if assumption else None,
+                execution_note=assumption.execution_note if assumption else None,
+            )
         )
-        for asset, weight in selected.weights.items()
-        if weight > 0.001
-    ]
 
     phase_in = "Invest gradually over 3 months"
     if request.risk_level == "conservative" or selected.estimated_max_drawdown < request.max_drawdown_tolerance * 0.95:

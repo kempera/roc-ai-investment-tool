@@ -76,14 +76,15 @@ class ThemeAssetReturnAgent:
         if not request.use_live_data:
             return assumptions
 
-        live_returns = maybe_get_live_returns([item.ticker for item in assumptions])
+        yahoo_tickers = [item.yahoo_ticker or item.ticker for item in assumptions]
+        live_returns = maybe_get_live_returns(yahoo_tickers)
         if live_returns is None:
             return assumptions
 
         live_estimates = estimate_from_returns(live_returns)
         adjusted = []
         for asset in assumptions:
-            estimate = live_estimates.get(asset.ticker)
+            estimate = live_estimates.get(asset.yahoo_ticker or asset.ticker)
             if not estimate:
                 adjusted.append(asset)
                 continue

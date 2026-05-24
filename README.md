@@ -18,6 +18,7 @@ https://roc-ai-investment-tool-cjojrb3twn3xknxxmmkehy.streamlit.app/
 - Generates competing portfolios.
 - Applies risk constraints.
 - Produces a CIO-style recommendation with weights, EUR amounts, stress tests, invalidation rules, and rebalancing rules.
+- Adds execution-ready instrument identifiers including ticker, ISIN, WKN, exchange, trading currency, and Yahoo Finance quote links.
 - Evaluates individual investment ideas, including distressed opportunities.
 - Exports a Markdown investment memo and structured JSON result.
 

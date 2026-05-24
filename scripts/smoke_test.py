@@ -26,6 +26,8 @@ def main() -> None:
     assert portfolio.max_drawdown_scenario >= -0.20
     assert portfolio.investment_memo.startswith("# Self-Driving Portfolio Investment Memo")
     assert portfolio.selected_method == "drawdown_constrained"
+    assert all(item.isin or item.asset == "Cash" for item in portfolio.recommended_portfolio)
+    assert any(item.yahoo_url and "finance.yahoo.com" in item.yahoo_url for item in portfolio.recommended_portfolio)
 
     single = run_single_asset_review(
         SingleAssetRequest(

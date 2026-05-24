@@ -69,7 +69,7 @@ with tab_portfolio:
 
         candidate_text = st.text_area(
             "Optional candidate tickers or asset labels, comma separated",
-            value="IWDA.AS, SMH, GRID, AGGH, IGLN, Cash",
+            value="EUNL.DE, VVSM.DE, GRID.DE, EUNA.DE, PPFB.DE, Cash",
         )
 
     with right:
@@ -119,12 +119,50 @@ with tab_portfolio:
 
         allocation = pd.DataFrame([item.model_dump() for item in result.recommended_portfolio])
         st.subheader("Recommended Allocation")
-        allocation_display = allocation.copy()
+        allocation_display = allocation[["asset", "weight", "amount"]].copy()
         allocation_display["weight"] = allocation_display["weight"].map(as_percent)
         allocation_display["amount"] = allocation_display["amount"].map(lambda value: f"{value:,.2f} {currency}")
         st.dataframe(allocation_display, use_container_width=True, hide_index=True)
 
         st.bar_chart(allocation.set_index("asset")["weight"] * 100)
+
+        st.subheader("Execution Details")
+        execution_columns = [
+            "asset",
+            "ticker",
+            "isin",
+            "wkn",
+            "security_type",
+            "exchange",
+            "trading_currency",
+            "amount",
+            "yahoo_url",
+            "execution_note",
+        ]
+        execution_display = allocation[execution_columns].copy()
+        execution_display["amount"] = execution_display["amount"].map(lambda value: f"{value:,.2f} {currency}")
+        st.dataframe(
+            execution_display,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "asset": "Instrument",
+                "ticker": "Ticker",
+                "isin": "ISIN",
+                "wkn": "WKN",
+                "security_type": "Type",
+                "exchange": "Exchange",
+                "trading_currency": "Trading Currency",
+                "amount": "Target Amount",
+                "yahoo_url": st.column_config.LinkColumn("Yahoo Finance"),
+                "execution_note": "Broker Note",
+            },
+        )
+
+        st.caption(
+            "Use the ISIN/WKN in your broker search and verify the final quote, spread, tax treatment, "
+            "and order venue before execution."
+        )
 
         col_1, col_2 = st.columns(2)
         with col_1:
