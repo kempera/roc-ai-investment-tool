@@ -4,6 +4,12 @@ An MVP implementation of **The Self-Driving Portfolio**: an agentic investment d
 
 This tool is for research and decision support only. It does not provide guaranteed results or personalized regulated financial advice.
 
+## Live App
+
+The deployed Streamlit app is available at:
+
+https://roc-ai-investment-tool-cjojrb3twn3xknxxmmkehy.streamlit.app/
+
 ## What It Does
 
 - Converts investor inputs into an investment policy statement.
@@ -57,6 +63,8 @@ The project is prepared for Streamlit Community Cloud deployment from GitHub.
 - Branch: `main`
 - Python: `3.12`
 - Dependencies: `requirements.txt`
+- GitHub repository: `https://github.com/kempera/roc-ai-investment-tool`
+- Streamlit app: `https://roc-ai-investment-tool-cjojrb3twn3xknxxmmkehy.streamlit.app/`
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for the deployment checklist.
 

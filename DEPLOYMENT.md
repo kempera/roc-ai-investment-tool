@@ -2,6 +2,11 @@
 
 This project is ready for Streamlit Community Cloud.
 
+## Live Deployment
+
+- GitHub: https://github.com/kempera/roc-ai-investment-tool
+- Streamlit: https://roc-ai-investment-tool-cjojrb3twn3xknxxmmkehy.streamlit.app/
+
 ## Repository Layout
 
 Streamlit Community Cloud runs the app from the repository root. Use:
