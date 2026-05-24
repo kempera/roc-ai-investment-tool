@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pandas as pd
 import streamlit as st
@@ -22,6 +23,37 @@ def as_percent(value: float) -> str:
 
 def json_bytes(payload) -> bytes:
     return json.dumps(payload, indent=2).encode("utf-8")
+
+
+def configure_spglobal_from_streamlit_secrets() -> None:
+    try:
+        secrets = st.secrets.get("spglobal", {})
+    except Exception:
+        secrets = {}
+
+    mapping = {
+        "SPGLOBAL_BASE_URL": "base_url",
+        "SPGLOBAL_UNIVERSE_ENDPOINT": "universe_endpoint",
+        "SPGLOBAL_TOKEN_URL": "token_url",
+        "SPGLOBAL_API_KEY": "api_key",
+        "SPGLOBAL_API_KEY_HEADER": "api_key_header",
+        "SPGLOBAL_USERNAME": "username",
+        "SPGLOBAL_PASSWORD": "password",
+        "SPGLOBAL_TIMEOUT": "timeout",
+    }
+    for env_key, secret_key in mapping.items():
+        value = secrets.get(secret_key) if hasattr(secrets, "get") else None
+        if value:
+            os.environ[env_key] = str(value)
+
+
+def spglobal_is_configured() -> bool:
+    has_endpoint = bool(os.getenv("SPGLOBAL_BASE_URL") and os.getenv("SPGLOBAL_UNIVERSE_ENDPOINT"))
+    has_auth = bool(os.getenv("SPGLOBAL_API_KEY") or (os.getenv("SPGLOBAL_USERNAME") and os.getenv("SPGLOBAL_PASSWORD")))
+    return has_endpoint and has_auth
+
+
+configure_spglobal_from_streamlit_secrets()
 
 
 st.title("The Self-Driving Portfolio")
@@ -73,6 +105,40 @@ with tab_portfolio:
         )
 
     with right:
+        st.subheader("Research Data")
+        data_provider_label = st.selectbox(
+            "Financial universe source",
+            [
+                "Built-in UCITS universe",
+                "S&P Global / Capital IQ beta",
+            ],
+        )
+        data_provider = "spglobal_capital_iq" if data_provider_label.startswith("S&P") else "builtin"
+        universe_limit = st.slider("Universe candidate limit", 5, 100, 25, step=5)
+
+        if data_provider == "spglobal_capital_iq":
+            if spglobal_is_configured():
+                st.success("S&P Global / Capital IQ provider is configured through secrets.")
+            else:
+                st.warning(
+                    "S&P Global / Capital IQ is selected but not configured. The app will fall back to "
+                    "the built-in universe until Streamlit secrets are added."
+                )
+                with st.expander("Required secrets"):
+                    st.code(
+                        """[spglobal]
+base_url = "https://your-spglobal-api-host.example"
+universe_endpoint = "/your/universe/search/endpoint"
+api_key = ""
+api_key_header = ""
+token_url = ""
+username = ""
+password = ""
+timeout = "20"
+""",
+                        language="toml",
+                    )
+
         st.subheader("Risk Policy")
         single_name_limit = st.slider("Single-position limit", 2, 25, 10, step=1) / 100
         theme_limit = st.slider("Theme exposure limit", 10, 70, 35, step=5) / 100
@@ -104,12 +170,20 @@ with tab_portfolio:
             minimum_cash_buffer=minimum_cash,
             rebalance_frequency=rebalance_frequency,
             use_live_data=use_live_data,
+            data_provider=data_provider,
+            universe_limit=universe_limit,
         )
 
         result = run_committee(request)
 
         st.subheader("Executive Decision")
         st.success(result.decision)
+        provider_status = result.data_provider_status
+        provider_message = provider_status.get("message", "No provider status available.")
+        if provider_status.get("configured") and not provider_status.get("fallback"):
+            st.info(f"Data provider: {provider_status.get('provider')} - {provider_message}")
+        else:
+            st.warning(f"Data provider: {provider_status.get('provider')} - {provider_message}")
 
         metrics = st.columns(4)
         metrics[0].metric("Expected Return", as_percent(result.expected_return))

@@ -5,7 +5,7 @@ import math
 import numpy as np
 from scipy.optimize import minimize
 
-from .data import DEFAULT_UNIVERSE, estimate_from_returns, maybe_get_live_returns
+from .data import estimate_from_returns, maybe_get_live_returns
 from .models import (
     AssetAssumption,
     InvestmentRequest,
@@ -14,6 +14,7 @@ from .models import (
     PortfolioCandidate,
     RiskReview,
 )
+from .providers import get_research_universe
 
 
 class InvestmentPolicyAgent:
@@ -69,9 +70,12 @@ class MacroRegimeAgent:
 
 
 class ThemeAssetReturnAgent:
+    def __init__(self) -> None:
+        self.provider_status: dict[str, str | int | bool | None] = {}
+
     def run(self, request: InvestmentRequest) -> list[AssetAssumption]:
-        assets = list(DEFAULT_UNIVERSE.values())
-        assumptions = [AssetAssumption(**asset) for asset in assets]
+        assumptions, status = get_research_universe(request)
+        self.provider_status = status
 
         if not request.use_live_data:
             return assumptions

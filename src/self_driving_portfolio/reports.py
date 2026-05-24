@@ -31,6 +31,7 @@ def render_committee_memo(
     risks_to_monitor: list[str],
     invalid_if: list[str],
     rebalance_rule: str,
+    data_provider_status: dict[str, str | int | bool | None] | None = None,
 ) -> str:
     allocation_lines = "\n".join(
         f"- {item.asset}: {percent(item.weight)} / {money(item.amount, request.currency)}"
@@ -64,6 +65,15 @@ def render_committee_memo(
     rejected_lines = "\n".join(
         f"- {item['method']}: {item['reason']}" for item in risk.rejected_portfolios
     ) or "- None"
+    provider = data_provider_status or {}
+    provider_lines = "\n".join(
+        [
+            f"- Provider: {provider.get('provider', 'n/a')}",
+            f"- Configured: {provider.get('configured', 'n/a')}",
+            f"- Status: {provider.get('message', 'n/a')}",
+            f"- Assets loaded: {provider.get('asset_count', 'n/a')}",
+        ]
+    )
 
     return f"""# Self-Driving Portfolio Investment Memo
 
@@ -89,6 +99,10 @@ Invest gradually over the recommended phase-in schedule using the **{selected.me
 
 - Regime: {macro.macro_regime}
 - Confidence: {percent(macro.confidence)}
+
+## Data Provider
+
+{provider_lines}
 
 ## Recommended Allocation
 

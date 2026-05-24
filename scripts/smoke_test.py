@@ -26,8 +26,20 @@ def main() -> None:
     assert portfolio.max_drawdown_scenario >= -0.20
     assert portfolio.investment_memo.startswith("# Self-Driving Portfolio Investment Memo")
     assert portfolio.selected_method == "drawdown_constrained"
+    assert portfolio.data_provider_status["provider"] == "Built-in universe"
     assert all(item.isin or item.asset == "Cash" for item in portfolio.recommended_portfolio)
     assert any(item.yahoo_url and "finance.yahoo.com" in item.yahoo_url for item in portfolio.recommended_portfolio)
+
+    enterprise_fallback = run_committee(
+        InvestmentRequest(
+            investment_hypothesis="AI infrastructure will outperform over 3 years",
+            budget=100000,
+            data_provider="spglobal_capital_iq",
+        )
+    )
+    assert enterprise_fallback.recommended_portfolio
+    assert enterprise_fallback.data_provider_status["provider"] == "S&P Global / Capital IQ"
+    assert enterprise_fallback.data_provider_status.get("fallback") is True
 
     single = run_single_asset_review(
         SingleAssetRequest(

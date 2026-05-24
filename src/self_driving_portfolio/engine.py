@@ -20,7 +20,8 @@ from .reports import render_committee_memo
 def run_committee(request: InvestmentRequest) -> CommitteeResult:
     policy = InvestmentPolicyAgent().run(request)
     macro = MacroRegimeAgent().run(request)
-    assumptions = ThemeAssetReturnAgent().run(request)
+    theme_agent = ThemeAssetReturnAgent()
+    assumptions = theme_agent.run(request)
     candidates = PortfolioOptimizerAgent().run(policy, assumptions)
     risk = RiskAgent().run(policy, candidates)
 
@@ -99,6 +100,7 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         risks_to_monitor=risks_to_monitor,
         invalid_if=invalid_if,
         rebalance_rule=rebalance_rule,
+        data_provider_status=theme_agent.provider_status,
     )
 
     return CommitteeResult(
@@ -116,6 +118,7 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         invalid_if=invalid_if,
         rebalance_rule=rebalance_rule,
         investment_memo=investment_memo,
+        data_provider_status=theme_agent.provider_status,
         policy=policy,
         macro_regime=macro,
         asset_assumptions=assumptions,

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 
 RiskLevel = Literal["conservative", "balanced", "growth"]
 LiquidityNeed = Literal["high", "medium", "low"]
+DataProvider = Literal["builtin", "spglobal_capital_iq"]
 
 
 class InvestmentRequest(BaseModel):
@@ -26,6 +27,8 @@ class InvestmentRequest(BaseModel):
     minimum_cash_buffer: float = Field(default=0.05, ge=0, le=1)
     rebalance_frequency: str = "quarterly"
     use_live_data: bool = False
+    data_provider: DataProvider = "builtin"
+    universe_limit: int = Field(default=25, ge=1, le=100)
 
     @field_validator("currency")
     @classmethod
@@ -121,6 +124,7 @@ class CommitteeResult(BaseModel):
     invalid_if: list[str]
     rebalance_rule: str
     investment_memo: str
+    data_provider_status: dict[str, str | int | bool | None] = Field(default_factory=dict)
     policy: Policy
     macro_regime: MacroRegime
     asset_assumptions: list[AssetAssumption]
