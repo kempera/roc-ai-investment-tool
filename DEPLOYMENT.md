@@ -32,26 +32,36 @@ No secrets are required for the MVP. The Yahoo Finance toggle uses public market
 
 ## Optional S&P Global / Capital IQ Data Provider
 
-The app includes a beta enterprise data-provider layer for S&P Global / Capital IQ universe research. Credentials must be configured through Streamlit secrets or local `.streamlit/secrets.toml`; never commit real credentials to GitHub.
+The app includes an enterprise data-provider layer for S&P Global / Capital IQ universe research. Credentials must be configured through Streamlit secrets or local `.streamlit/secrets.toml`; never commit real credentials to GitHub.
+
+For the official S&P Capital IQ API, enter your Capital IQ API username and password. The app defaults to:
+
+- Token endpoint: `https://api-ciq.marketintelligence.spglobal.com/gdsapi/rest/authenticate/api/v1/token`
+- Web Service Direct endpoint: `https://api-ciq.marketintelligence.spglobal.com/gdsapi/rest/v3/clientservice.json`
+- Default mnemonics: `IQ_COMPANY_NAME`, `IQ_MARKETCAP`, `IQ_TOTAL_REV`, `IQ_EBITDA`
 
 Example:
 
 ```toml
 [spglobal]
-base_url = "https://your-spglobal-api-host.example"
-universe_endpoint = "/your/universe/search/endpoint"
-
-# Use either api_key or username/password.
-api_key = ""
-api_key_header = "" # optional, e.g. "Ocp-Apim-Subscription-Key"; default is bearer token
+base_url = ""
 token_url = ""
+clientservice_url = ""
+
 username = ""
 password = ""
+
+ciq_mnemonics = "IQ_COMPANY_NAME,IQ_MARKETCAP,IQ_TOTAL_REV,IQ_EBITDA"
+ciq_identifier_map = '{"EUNL.DE":"EUNL:DB","VVSM.DE":"VVSM:DB","GRID.DE":"GRID:DB","EUNA.DE":"EUNA:DB","PPFB.DE":"PPFB:DB"}'
 
 timeout = "20"
 ```
 
-The provider expects the configured universe endpoint to return JSON records with fields such as `name`, `ticker`, `isin`, `wkn`, `assetClass`, `exchange`, `currency`, `yahooTicker`, `expectedReturn`, `expectedVolatility`, `maxDrawdown`, `themeExposure`, `liquidityScore`, and `confidence`. If the endpoint is missing, credentials are absent, or a request fails, the app falls back to the built-in UCITS/EUR universe.
+Capital IQ identifiers work best in `TICKER:EXCHANGE` format, such as `IBM:NYSE` or `NVDA:NASDAQ`. If the app input uses Yahoo tickers like `EUNL.DE`, configure `ciq_identifier_map` to translate them into your Capital IQ identifiers.
+
+For a custom S&P/Capital IQ enterprise universe endpoint, set `base_url`, `universe_endpoint`, and either `api_key` or `username`/`password`. That endpoint should return JSON records with fields such as `name`, `ticker`, `isin`, `wkn`, `assetClass`, `exchange`, `currency`, `yahooTicker`, `expectedReturn`, `expectedVolatility`, `maxDrawdown`, `themeExposure`, `liquidityScore`, and `confidence`.
+
+If credentials are absent or a request fails, the app falls back to the built-in UCITS/EUR universe.
 
 ## Update
 

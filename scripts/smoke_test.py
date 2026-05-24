@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 
 from src.self_driving_portfolio.engine import run_committee, run_single_asset_review
 from src.self_driving_portfolio.models import InvestmentRequest, SingleAssetRequest
+from src.self_driving_portfolio.providers import _capital_iq_assets_from_values, _extract_capital_iq_values
 
 
 SPGLOBAL_ENV_KEYS = [
@@ -20,6 +21,9 @@ SPGLOBAL_ENV_KEYS = [
     "SPGLOBAL_API_KEY_HEADER",
     "SPGLOBAL_USERNAME",
     "SPGLOBAL_PASSWORD",
+    "SPGLOBAL_CLIENTSERVICE_URL",
+    "SPGLOBAL_CIQ_MNEMONICS",
+    "SPGLOBAL_CIQ_IDENTIFIER_MAP",
     "SPGLOBAL_TIMEOUT",
 ]
 
@@ -72,10 +76,46 @@ def main() -> None:
         restore_env(saved_env)
 
     assert enterprise_fallback.recommended_portfolio
-    assert enterprise_fallback.data_provider_status["provider"] == "S&P Global / Capital IQ"
+    assert enterprise_fallback.data_provider_status["provider"] == "S&P Capital IQ API"
     assert enterprise_fallback.data_provider_status.get("fallback") is True
     assert "your-token-endpoint" not in enterprise_fallback.data_provider_status["message"]
     assert "REAL_SPGLOBAL_API_HOST" not in enterprise_fallback.data_provider_status["message"]
+
+    capital_iq_payload = {
+        "GDSSDKResponse": [
+            {
+                "Identifier": "NVDA:NASDAQ",
+                "Mnemonic": "IQ_COMPANY_NAME",
+                "Rows": [{"Row": ["NVIDIA Corporation"]}],
+                "ErrMsg": "",
+            },
+            {
+                "Identifier": "NVDA:NASDAQ",
+                "Mnemonic": "IQ_MARKETCAP",
+                "Rows": [{"Row": ["3000000000000"]}],
+                "ErrMsg": "",
+            },
+            {
+                "Identifier": "NVDA:NASDAQ",
+                "Mnemonic": "IQ_TOTAL_REV",
+                "Rows": [{"Row": ["60922000000"]}],
+                "ErrMsg": "",
+            },
+        ]
+    }
+    capital_iq_values = _extract_capital_iq_values(capital_iq_payload)
+    capital_iq_assets = _capital_iq_assets_from_values(
+        ["NVDA:NASDAQ"],
+        capital_iq_values,
+        InvestmentRequest(
+            investment_hypothesis="AI infrastructure will outperform",
+            budget=100000,
+            candidate_assets=["NVDA:NASDAQ"],
+        ),
+    )
+    assert capital_iq_assets[0].name == "NVIDIA Corporation"
+    assert capital_iq_assets[0].exchange == "NASDAQ"
+    assert capital_iq_assets[0].liquidity_score >= 90
 
     single = run_single_asset_review(
         SingleAssetRequest(

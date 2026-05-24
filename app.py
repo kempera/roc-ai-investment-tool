@@ -69,6 +69,9 @@ def configure_spglobal_from_streamlit_secrets() -> None:
         "SPGLOBAL_API_KEY_HEADER": "api_key_header",
         "SPGLOBAL_USERNAME": "username",
         "SPGLOBAL_PASSWORD": "password",
+        "SPGLOBAL_CLIENTSERVICE_URL": "clientservice_url",
+        "SPGLOBAL_CIQ_MNEMONICS": "ciq_mnemonics",
+        "SPGLOBAL_CIQ_IDENTIFIER_MAP": "ciq_identifier_map",
         "SPGLOBAL_TIMEOUT": "timeout",
     }
     for env_key, secret_key in mapping.items():
@@ -81,9 +84,10 @@ def configure_spglobal_from_streamlit_secrets() -> None:
 
 
 def spglobal_is_configured() -> bool:
+    has_capital_iq_api_auth = bool(os.getenv("SPGLOBAL_USERNAME") and os.getenv("SPGLOBAL_PASSWORD"))
     has_endpoint = bool(os.getenv("SPGLOBAL_BASE_URL") and os.getenv("SPGLOBAL_UNIVERSE_ENDPOINT"))
     has_auth = bool(os.getenv("SPGLOBAL_API_KEY") or (os.getenv("SPGLOBAL_USERNAME") and os.getenv("SPGLOBAL_PASSWORD")))
-    return has_endpoint and has_auth
+    return has_capital_iq_api_auth or (has_endpoint and has_auth)
 
 
 configure_spglobal_from_streamlit_secrets()
@@ -133,8 +137,9 @@ with tab_portfolio:
         benchmark = st.text_input("Benchmark", value="60/40 global equity/bond")
 
         candidate_text = st.text_area(
-            "Optional candidate tickers or asset labels, comma separated",
+            "Optional candidate tickers or Capital IQ identifiers, comma separated",
             value="EUNL.DE, VVSM.DE, GRID.DE, EUNA.DE, PPFB.DE, Cash",
+            help="For Capital IQ API, use identifiers like IBM:NYSE or NVDA:NASDAQ, or map your Yahoo tickers in ciq_identifier_map.",
         )
 
     with right:
@@ -160,13 +165,16 @@ with tab_portfolio:
                 with st.expander("Required secrets"):
                     st.code(
                         """[spglobal]
-base_url = "https://your-spglobal-api-host.example"
-universe_endpoint = "/your/universe/search/endpoint"
+base_url = ""
+token_url = ""
+clientservice_url = ""
+universe_endpoint = ""
 api_key = ""
 api_key_header = ""
-token_url = ""
 username = ""
 password = ""
+ciq_mnemonics = "IQ_COMPANY_NAME,IQ_MARKETCAP,IQ_TOTAL_REV,IQ_EBITDA"
+ciq_identifier_map = "{}"
 timeout = "20"
 """,
                         language="toml",
