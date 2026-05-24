@@ -89,7 +89,7 @@ def _spglobal_capital_iq_universe(
         return [], provider_status(
             "S&P Global / Capital IQ",
             True,
-            f"Provider request failed: {type(exc).__name__}: {exc}",
+            _provider_error_message(exc),
         )
 
 
@@ -119,8 +119,13 @@ def _clean_config_value(value: str | None) -> str | None:
         "your/",
         "your_",
         "your.",
+        "real-",
+        "real/",
+        "real_",
+        "real.",
         "example",
         "if-you-have-one",
+        "placeholder",
         "replace_me",
         "changeme",
         "<",
@@ -129,6 +134,37 @@ def _clean_config_value(value: str | None) -> str | None:
     if any(marker in lowered for marker in placeholder_markers):
         return None
     return text
+
+
+def _provider_error_message(exc: Exception) -> str:
+    if isinstance(exc, requests.exceptions.Timeout):
+        return (
+            "Provider request timed out. Check the S&P/Capital IQ endpoint URL, firewall/VPN access, "
+            "and increase timeout if the endpoint is slow."
+        )
+
+    if isinstance(exc, requests.exceptions.HTTPError):
+        response = exc.response
+        status_code = response.status_code if response is not None else "unknown"
+        if status_code in {401, 403}:
+            return "Provider rejected the request. Check the API key, username/password, token URL, and account entitlements."
+        if status_code == 404:
+            return "Provider endpoint was not found. Check base_url and universe_endpoint."
+        return f"Provider returned HTTP {status_code}. Check the endpoint, request schema, and account permissions."
+
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return (
+            "Provider host could not be reached. Replace template values such as REAL_SPGLOBAL_API_HOST "
+            "with the real S&P/Capital IQ API host, and verify network/DNS access."
+        )
+
+    if isinstance(exc, requests.exceptions.RequestException):
+        return "Provider request failed. Check the S&P/Capital IQ API host, endpoint, credentials, and network access."
+
+    if isinstance(exc, ValueError):
+        return "Provider returned a response that could not be parsed as JSON. Check the configured endpoint."
+
+    return f"Provider request failed: {type(exc).__name__}."
 
 
 def _spglobal_headers(config: dict[str, str | None]) -> dict[str, str]:

@@ -55,8 +55,8 @@ def main() -> None:
     try:
         for key in SPGLOBAL_ENV_KEYS:
             os.environ.pop(key, None)
-        os.environ["SPGLOBAL_BASE_URL"] = "https://your-spglobal-api-host.example"
-        os.environ["SPGLOBAL_UNIVERSE_ENDPOINT"] = "/your/universe/search/endpoint"
+        os.environ["SPGLOBAL_BASE_URL"] = "https://REAL_SPGLOBAL_API_HOST"
+        os.environ["SPGLOBAL_UNIVERSE_ENDPOINT"] = "/REAL_UNIVERSE_SEARCH_ENDPOINT"
         os.environ["SPGLOBAL_TOKEN_URL"] = "https://your-token-endpoint-if-you-have-one"
         os.environ["SPGLOBAL_USERNAME"] = "YOUR_USERNAME"
         os.environ["SPGLOBAL_PASSWORD"] = "YOUR_PASSWORD"
@@ -75,6 +75,7 @@ def main() -> None:
     assert enterprise_fallback.data_provider_status["provider"] == "S&P Global / Capital IQ"
     assert enterprise_fallback.data_provider_status.get("fallback") is True
     assert "your-token-endpoint" not in enterprise_fallback.data_provider_status["message"]
+    assert "REAL_SPGLOBAL_API_HOST" not in enterprise_fallback.data_provider_status["message"]
 
     single = run_single_asset_review(
         SingleAssetRequest(
