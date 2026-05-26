@@ -80,12 +80,16 @@ class AssetAssumption(BaseModel):
 
 class PortfolioCandidate(BaseModel):
     method: str
+    method_family: str = "other"
     weights: dict[str, float]
     expected_return: float
     expected_volatility: float
     estimated_max_drawdown: float
     sharpe_estimate: float
     theme_exposure: float
+    effective_assets: float = 0
+    diversification_ratio: float = 0
+    estimation_risk: float = 0
 
 
 class RiskReview(BaseModel):
@@ -121,6 +125,7 @@ class CommitteeResult(BaseModel):
     stress_test_summary: dict[str, float | str]
     candidate_diagnostics: list[dict[str, str | float | bool]]
     rationale: list[str]
+    process_review: list[str]
     risk_return_assessment: list[str]
     allocation_check: dict[str, bool | float | str]
     pros: list[str]

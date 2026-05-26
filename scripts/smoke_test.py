@@ -64,14 +64,25 @@ def main() -> None:
     assert len({round(weight, 3) for weight in weights_by_ticker.values()}) > 3
     assert max(weights_by_ticker.values()) - min(weights_by_ticker.values()) > 0.05
     assert any(item["method"] == "equal_weight_benchmark" for item in portfolio.candidate_diagnostics)
+    diagnostic_methods = {item["method"] for item in portfolio.candidate_diagnostics}
+    assert {
+        "maximum_diversification",
+        "maximum_entropy",
+        "tail_risk_parity",
+        "adversarial_diversifier",
+        "committee_blend",
+    }.issubset(diagnostic_methods)
+    assert all("borda_rank" in item for item in portfolio.candidate_diagnostics)
     assert portfolio.candidate_diagnostics[0]["method"] == "committee_blend"
     assert portfolio.allocation_check["weights_match_selected_method"] is True
     assert portfolio.allocation_check["amount_sum_ok"] is True
     assert portfolio.allocation_check["drawdown_within_tolerance"] is True
     assert portfolio.allocation_check["volatility_within_target"] is True
     assert portfolio.risk_return_assessment
+    assert portfolio.process_review
     assert "## Allocation Check" in portfolio.investment_memo
     assert "## Risk And Return Evaluation" in portfolio.investment_memo
+    assert "## Process Review From Paper And Literature" in portfolio.investment_memo
     assert portfolio.pros
     assert portfolio.cons
     assert portfolio.final_judgement

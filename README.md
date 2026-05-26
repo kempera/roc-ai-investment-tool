@@ -15,9 +15,9 @@ https://roc-ai-investment-tool-cjojrb3twn3xknxxmmkehy.streamlit.app/
 - Converts investor inputs into an investment policy statement.
 - Builds a simple investable universe from the hypothesis and allowed asset classes.
 - Estimates risk and return assumptions.
-- Generates competing portfolios.
-- Applies risk constraints.
-- Produces a CIO-style committee-blend recommendation with weights, EUR amounts, stress tests, method diagnostics, balanced pros/cons, final judgement, invalidation rules, and rebalancing rules.
+- Generates competing portfolios across heuristic, return-optimized, risk-structured, non-traditional, and researcher-style methods.
+- Applies risk constraints and a Borda-style method review before the CIO ensemble is selected.
+- Produces a CIO-style committee-blend recommendation with weights, EUR amounts, stress tests, method diagnostics, process review, balanced pros/cons, final judgement, invalidation rules, and rebalancing rules.
 - Adds execution-ready instrument identifiers including ticker, ISIN, WKN, exchange, trading currency, and Yahoo Finance quote links.
 - Supports the S&P Capital IQ API token-auth/Web Service Direct flow through secure Streamlit secrets, includes an in-app API probe, and keeps an optional custom S&P enterprise universe endpoint.
 - Evaluates individual investment ideas, including distressed opportunities.
@@ -90,5 +90,7 @@ The app implements six agents:
 4. Portfolio Optimizer Agent
 5. Risk Agent
 6. CIO Decision Agent
+
+The portfolio optimizer includes equal-weight benchmark, risk parity, minimum variance, maximum diversification, maximum Sharpe, maximum entropy, tail-risk parity, drawdown-constrained, adversarial-diversifier, and CIO committee-blend candidates. The review layer follows the paper's core idea: independent methods, risk filtering, Borda-style voting, and a final CIO ensemble rather than a single static allocation.
 
 The LLM-style reasoning layer is represented as deterministic Python agent classes for the MVP. Future versions can connect these stages to LangGraph or another orchestration framework while preserving the same typed data contracts.

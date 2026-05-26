@@ -244,7 +244,7 @@ timeout = "20"
 
         st.subheader("Executive Decision")
         st.success(result.decision)
-        provider_status = result.data_provider_status
+        provider_status = getattr(result, "data_provider_status", {}) or {}
         provider_message = provider_status.get("message", "No provider status available.")
         if provider_status.get("configured") and not provider_status.get("fallback"):
             st.info(f"Data provider: {provider_status.get('provider')} - {provider_message}")
@@ -281,10 +281,17 @@ timeout = "20"
         st.subheader("Portfolio Method Review")
         methods_display = pd.DataFrame(result.candidate_diagnostics)
         if not methods_display.empty:
-            for column in ["expected_return", "expected_volatility", "estimated_drawdown", "theme_exposure"]:
+            for column in ["expected_return", "expected_volatility", "estimated_drawdown", "theme_exposure", "estimation_risk"]:
                 methods_display[column] = methods_display[column].map(as_percent)
             methods_display["score"] = methods_display["score"].map(lambda value: f"{value:.3f}")
+            methods_display["diversification_ratio"] = methods_display["diversification_ratio"].map(lambda value: f"{value:.2f}")
+            methods_display["effective_assets"] = methods_display["effective_assets"].map(lambda value: f"{value:.1f}")
+            methods_display["borda_points"] = methods_display["borda_points"].map(lambda value: f"{value:.2f}")
             st.dataframe(methods_display, use_container_width=True, hide_index=True)
+
+        st.subheader("Process Review")
+        for item in getattr(result, "process_review", []):
+            st.write(f"- {item}")
 
         st.subheader("Risk / Return Evaluation")
         for item in result.risk_return_assessment:

@@ -116,33 +116,93 @@ class PortfolioOptimizerAgent:
             ]
         )
         volatilities = np.array([asset.expected_volatility for asset in assumptions])
-        correlation = np.full((len(assumptions), len(assumptions)), 0.35)
-        np.fill_diagonal(correlation, 1.0)
+        correlation = self._correlation_matrix(assumptions)
         covariance = np.outer(volatilities, volatilities) * correlation
 
         equal_weight = np.ones(len(names)) / len(names)
-        risk_parity = self._risk_parity(volatilities, policy)
+        risk_parity = self._risk_parity(volatilities, policy, covariance, assumptions)
         minimum_variance = self._min_variance(expected_returns, covariance, policy, assumptions)
+        maximum_diversification = self._maximum_diversification(volatilities, covariance, policy, assumptions)
         maximum_sharpe = self._max_sharpe(expected_returns, covariance, policy, assumptions)
+        maximum_entropy = self._maximum_entropy(expected_returns, covariance, policy, assumptions, maximum_sharpe)
+        tail_risk_parity = self._tail_risk_parity(covariance, policy, assumptions)
         drawdown_constrained = self._drawdown_constrained(expected_returns, covariance, policy, assumptions)
+        adversarial_diversifier = self._adversarial_diversifier(
+            expected_returns,
+            covariance,
+            policy,
+            assumptions,
+            {
+                "risk_parity": risk_parity,
+                "minimum_variance": minimum_variance,
+                "maximum_diversification": maximum_diversification,
+                "maximum_sharpe": maximum_sharpe,
+                "maximum_entropy": maximum_entropy,
+                "tail_risk_parity": tail_risk_parity,
+                "drawdown_constrained": drawdown_constrained,
+            },
+        )
         committee_blend = self._committee_blend(
             {
                 "risk_parity": risk_parity,
                 "minimum_variance": minimum_variance,
+                "maximum_diversification": maximum_diversification,
                 "maximum_sharpe": maximum_sharpe,
+                "maximum_entropy": maximum_entropy,
+                "tail_risk_parity": tail_risk_parity,
                 "drawdown_constrained": drawdown_constrained,
+                "adversarial_diversifier": adversarial_diversifier,
             },
             policy,
         )
 
         candidates = []
-        candidates.append(self._candidate("equal_weight_benchmark", equal_weight, names, expected_returns, covariance, assumptions))
-        candidates.append(self._candidate("risk_parity", risk_parity, names, expected_returns, covariance, assumptions))
-        candidates.append(self._candidate("minimum_variance", minimum_variance, names, expected_returns, covariance, assumptions))
-        candidates.append(self._candidate("maximum_sharpe", maximum_sharpe, names, expected_returns, covariance, assumptions))
-        candidates.append(self._candidate("drawdown_constrained", drawdown_constrained, names, expected_returns, covariance, assumptions))
-        candidates.append(self._candidate("committee_blend", committee_blend, names, expected_returns, covariance, assumptions))
+        candidates.append(self._candidate("equal_weight_benchmark", "heuristic", equal_weight, names, expected_returns, covariance, assumptions))
+        candidates.append(self._candidate("risk_parity", "risk_structured", risk_parity, names, expected_returns, covariance, assumptions))
+        candidates.append(self._candidate("minimum_variance", "risk_structured", minimum_variance, names, expected_returns, covariance, assumptions))
+        candidates.append(self._candidate("maximum_diversification", "risk_structured", maximum_diversification, names, expected_returns, covariance, assumptions))
+        candidates.append(self._candidate("maximum_sharpe", "return_optimized", maximum_sharpe, names, expected_returns, covariance, assumptions))
+        candidates.append(self._candidate("maximum_entropy", "researcher", maximum_entropy, names, expected_returns, covariance, assumptions))
+        candidates.append(self._candidate("tail_risk_parity", "non_traditional", tail_risk_parity, names, expected_returns, covariance, assumptions))
+        candidates.append(self._candidate("drawdown_constrained", "non_traditional", drawdown_constrained, names, expected_returns, covariance, assumptions))
+        candidates.append(self._candidate("adversarial_diversifier", "non_traditional", adversarial_diversifier, names, expected_returns, covariance, assumptions))
+        candidates.append(self._candidate("committee_blend", "cio_ensemble", committee_blend, names, expected_returns, covariance, assumptions))
         return candidates
+
+    def _correlation_matrix(self, assumptions: list[AssetAssumption]) -> np.ndarray:
+        count = len(assumptions)
+        matrix = np.eye(count)
+        for i, left in enumerate(assumptions):
+            for j, right in enumerate(assumptions):
+                if i == j:
+                    continue
+                matrix[i, j] = self._pairwise_correlation(left, right)
+        return matrix
+
+    def _pairwise_correlation(self, left: AssetAssumption, right: AssetAssumption) -> float:
+        left_class = left.asset_class.lower()
+        right_class = right.asset_class.lower()
+        classes = {left_class, right_class}
+
+        if "cash" in classes:
+            return 0.02
+        if left_class == right_class == "equity_etf":
+            if min(left.theme_exposure, right.theme_exposure) >= 60:
+                return 0.82
+            return 0.68
+        if left_class.startswith("equity") and right_class.startswith("equity"):
+            return 0.72
+        if any(item.startswith("equity") for item in classes) and "bond_etf" in classes:
+            return 0.18
+        if any(item.startswith("equity") for item in classes) and "commodity" in classes:
+            return 0.12
+        if "bond_etf" in classes and "commodity" in classes:
+            return 0.06
+        if left_class == right_class == "bond_etf":
+            return 0.62
+        if left_class == right_class == "commodity":
+            return 0.50
+        return 0.30
 
     def _bounds(self, policy: Policy, assumptions: list[AssetAssumption]) -> list[tuple[float, float]]:
         bounds = []
@@ -181,7 +241,40 @@ class PortfolioOptimizerAgent:
             return np.ones(len(weights)) / len(weights)
         return weights / total
 
-    def _risk_parity(self, volatilities: np.ndarray, policy: Policy) -> np.ndarray:
+    def _project_to_policy(
+        self,
+        weights: np.ndarray,
+        policy: Policy,
+        covariance: np.ndarray,
+        assumptions: list[AssetAssumption],
+    ) -> np.ndarray:
+        count = len(weights)
+        target = self._normalize(weights)
+        result = minimize(
+            lambda candidate: float(np.sum((candidate - target) ** 2)),
+            target,
+            bounds=self._bounds(policy, assumptions),
+            constraints=self._risk_constraints(policy, covariance, assumptions),
+            method="SLSQP",
+            options={"maxiter": 300},
+        )
+        if result.success:
+            return self._normalize(result.x)
+
+        clipped = np.array(
+            [min(max(weight, low), high) for weight, (low, high) in zip(target, self._bounds(policy, assumptions))]
+        )
+        if clipped.sum() <= 0:
+            clipped = np.ones(count) / count
+        return self._normalize(clipped)
+
+    def _risk_parity(
+        self,
+        volatilities: np.ndarray,
+        policy: Policy,
+        covariance: np.ndarray,
+        assumptions: list[AssetAssumption],
+    ) -> np.ndarray:
         inv_vol = 1 / np.maximum(volatilities, 0.04)
         weights = self._normalize(inv_vol)
         weights[-1] = max(weights[-1], policy.minimum_cash)
@@ -190,7 +283,7 @@ class PortfolioOptimizerAgent:
             weights[-1] = 0.25
             non_cash = self._normalize(weights[:-1])
             weights[:-1] += excess * non_cash
-        return self._normalize(weights)
+        return self._project_to_policy(weights, policy, covariance, assumptions)
 
     def _min_variance(
         self,
@@ -235,6 +328,102 @@ class PortfolioOptimizerAgent:
         weights[-1] = max(weights[-1], policy.minimum_cash)
         return self._normalize(weights)
 
+    def _maximum_diversification(
+        self,
+        volatilities: np.ndarray,
+        covariance: np.ndarray,
+        policy: Policy,
+        assumptions: list[AssetAssumption],
+    ) -> np.ndarray:
+        count = len(assumptions)
+        start = self._risk_parity(volatilities, policy, covariance, assumptions)
+
+        def objective(weights: np.ndarray) -> float:
+            weighted_volatility = float(weights @ volatilities)
+            portfolio_volatility = self._volatility(weights, covariance)
+            diversification_ratio = weighted_volatility / max(portfolio_volatility, 0.001)
+            return -diversification_ratio
+
+        result = minimize(
+            objective,
+            start,
+            bounds=self._bounds(policy, assumptions),
+            constraints=self._risk_constraints(policy, covariance, assumptions),
+            method="SLSQP",
+            options={"maxiter": 500},
+        )
+        return self._normalize(result.x if result.success else start)
+
+    def _maximum_entropy(
+        self,
+        expected_returns: np.ndarray,
+        covariance: np.ndarray,
+        policy: Policy,
+        assumptions: list[AssetAssumption],
+        maximum_sharpe: np.ndarray,
+    ) -> np.ndarray:
+        count = len(assumptions)
+        start = self._project_to_policy(np.ones(count) / count, policy, covariance, assumptions)
+        max_sharpe_floor = max(self._sharpe(maximum_sharpe, expected_returns, covariance) * 0.60, 0.02)
+
+        def entropy(weights: np.ndarray) -> float:
+            usable = np.clip(weights, 1e-9, 1)
+            return float(-np.sum(usable * np.log(usable)) / math.log(count))
+
+        def objective(weights: np.ndarray) -> float:
+            drawdown_buffer = max(self._estimated_drawdown(weights, assumptions) - policy.max_drawdown_tolerance, 0)
+            return -(
+                entropy(weights)
+                + 0.20 * max(self._sharpe(weights, expected_returns, covariance), 0)
+                + 0.10 * drawdown_buffer
+            )
+
+        constraints = self._risk_constraints(policy, covariance, assumptions) + [
+            {
+                "type": "ineq",
+                "fun": lambda weights: self._sharpe(weights, expected_returns, covariance) - max_sharpe_floor,
+            }
+        ]
+        result = minimize(
+            objective,
+            start,
+            bounds=self._bounds(policy, assumptions),
+            constraints=constraints,
+            method="SLSQP",
+            options={"maxiter": 500},
+        )
+        return self._normalize(result.x if result.success else start)
+
+    def _tail_risk_parity(
+        self,
+        covariance: np.ndarray,
+        policy: Policy,
+        assumptions: list[AssetAssumption],
+    ) -> np.ndarray:
+        count = len(assumptions)
+        tail_risk = np.array(
+            [
+                max(abs(asset.max_drawdown_estimate), asset.expected_volatility * 1.75, 0.02)
+                for asset in assumptions
+            ]
+        )
+        start = self._project_to_policy(1 / tail_risk, policy, covariance, assumptions)
+
+        def objective(weights: np.ndarray) -> float:
+            contributions = weights * tail_risk
+            target = float(np.mean(contributions))
+            return float(np.sum((contributions - target) ** 2) + 0.05 * self._volatility(weights, covariance))
+
+        result = minimize(
+            objective,
+            start,
+            bounds=self._bounds(policy, assumptions),
+            constraints=self._risk_constraints(policy, covariance, assumptions),
+            method="SLSQP",
+            options={"maxiter": 500},
+        )
+        return self._normalize(result.x if result.success else start)
+
     def _drawdown_constrained(
         self,
         expected_returns: np.ndarray,
@@ -243,7 +432,12 @@ class PortfolioOptimizerAgent:
         assumptions: list[AssetAssumption],
     ) -> np.ndarray:
         count = len(assumptions)
-        start = self._risk_parity(np.array([asset.expected_volatility for asset in assumptions]), policy)
+        start = self._risk_parity(
+            np.array([asset.expected_volatility for asset in assumptions]),
+            policy,
+            covariance,
+            assumptions,
+        )
         target_volatility = sum(policy.target_volatility) / 2
 
         def objective(weights: np.ndarray) -> float:
@@ -271,27 +465,75 @@ class PortfolioOptimizerAgent:
         )
         return self._normalize(result.x if result.success else start)
 
+    def _adversarial_diversifier(
+        self,
+        expected_returns: np.ndarray,
+        covariance: np.ndarray,
+        policy: Policy,
+        assumptions: list[AssetAssumption],
+        method_weights: dict[str, np.ndarray],
+    ) -> np.ndarray:
+        count = len(assumptions)
+        centroid = self._normalize(np.mean(np.array(list(method_weights.values())), axis=0))
+        max_sharpe = max(self._sharpe(method_weights["maximum_sharpe"], expected_returns, covariance), 0.02)
+        sharpe_floor = max_sharpe * 0.50
+        start = self._project_to_policy(1 - centroid, policy, covariance, assumptions)
+
+        def objective(weights: np.ndarray) -> float:
+            active = weights - centroid
+            tracking_variance = float(active @ covariance @ active)
+            entropy_penalty = float(np.sum(np.clip(weights, 1e-9, 1) * np.log(np.clip(weights, 1e-9, 1))))
+            return -(tracking_variance - 0.002 * entropy_penalty)
+
+        constraints = self._risk_constraints(policy, covariance, assumptions) + [
+            {
+                "type": "ineq",
+                "fun": lambda weights: self._sharpe(weights, expected_returns, covariance) - sharpe_floor,
+            }
+        ]
+        result = minimize(
+            objective,
+            start,
+            bounds=self._bounds(policy, assumptions),
+            constraints=constraints,
+            method="SLSQP",
+            options={"maxiter": 700},
+        )
+        return self._normalize(result.x if result.success else start)
+
     def _committee_blend(self, method_weights: dict[str, np.ndarray], policy: Policy) -> np.ndarray:
         if policy.target_volatility[1] <= 0.08:
             style_weights = {
-                "risk_parity": 0.35,
-                "minimum_variance": 0.25,
-                "maximum_sharpe": 0.05,
-                "drawdown_constrained": 0.35,
+                "risk_parity": 0.24,
+                "minimum_variance": 0.16,
+                "maximum_diversification": 0.22,
+                "maximum_sharpe": 0.03,
+                "maximum_entropy": 0.08,
+                "tail_risk_parity": 0.17,
+                "drawdown_constrained": 0.08,
+                "adversarial_diversifier": 0.02,
             }
         elif policy.target_volatility[1] >= 0.18:
             style_weights = {
-                "risk_parity": 0.15,
-                "minimum_variance": 0.05,
-                "maximum_sharpe": 0.35,
-                "drawdown_constrained": 0.45,
+                "risk_parity": 0.10,
+                "minimum_variance": 0.03,
+                "maximum_diversification": 0.17,
+                "maximum_sharpe": 0.28,
+                "maximum_entropy": 0.12,
+                "tail_risk_parity": 0.08,
+                "drawdown_constrained": 0.17,
+                "adversarial_diversifier": 0.05,
             }
         else:
             style_weights = {
-                "risk_parity": 0.25,
-                "minimum_variance": 0.10,
-                "maximum_sharpe": 0.20,
-                "drawdown_constrained": 0.45,
+                "risk_parity": 0.12,
+                "minimum_variance": 0.03,
+                "maximum_diversification": 0.10,
+                "maximum_sharpe": 0.18,
+                "maximum_entropy": 0.17,
+                "tail_risk_parity": 0.05,
+                "drawdown_constrained": 0.30,
+                "adversarial_diversifier": 0.05,
             }
 
         blended = None
@@ -306,6 +548,11 @@ class PortfolioOptimizerAgent:
     def _volatility(self, weights: np.ndarray, covariance: np.ndarray) -> float:
         return float(math.sqrt(max(weights @ covariance @ weights, 0)))
 
+    def _sharpe(self, weights: np.ndarray, expected_returns: np.ndarray, covariance: np.ndarray) -> float:
+        ret = float(weights @ expected_returns)
+        vol = self._volatility(weights, covariance)
+        return float((ret - 0.025) / max(vol, 0.001))
+
     def _theme_exposure(self, weights: np.ndarray, assumptions: list[AssetAssumption]) -> float:
         return float(sum(weight * asset.theme_exposure / 100 for weight, asset in zip(weights, assumptions)))
 
@@ -318,6 +565,7 @@ class PortfolioOptimizerAgent:
     def _candidate(
         self,
         method: str,
+        method_family: str,
         weights: np.ndarray,
         names: list[str],
         expected_returns: np.ndarray,
@@ -329,15 +577,29 @@ class PortfolioOptimizerAgent:
         vol = self._volatility(weights, covariance)
         theme_exposure = self._theme_exposure(weights, assumptions)
         drawdown = self._estimated_drawdown(weights, assumptions)
-        sharpe = float((ret - 0.025) / max(vol, 0.001))
+        sharpe = self._sharpe(weights, expected_returns, covariance)
+        asset_volatilities = np.array([asset.expected_volatility for asset in assumptions])
+        diversification_ratio = float((weights @ asset_volatilities) / max(vol, 0.001))
+        effective_assets = float(1 / max(np.sum(weights**2), 0.001))
+        concentration = float(np.max(weights))
+        average_confidence = float(
+            sum(weight * asset.confidence for weight, asset in zip(weights, assumptions))
+        )
+        estimation_risk = float(
+            min(1, max(0, 0.55 * concentration + 0.30 * theme_exposure + 0.15 * (1 - average_confidence)))
+        )
         return PortfolioCandidate(
             method=method,
+            method_family=method_family,
             weights={name: float(weight) for name, weight in zip(names, weights)},
             expected_return=ret,
             expected_volatility=vol,
             estimated_max_drawdown=drawdown,
             sharpe_estimate=sharpe,
             theme_exposure=theme_exposure,
+            effective_assets=effective_assets,
+            diversification_ratio=diversification_ratio,
+            estimation_risk=estimation_risk,
         )
 
 
@@ -355,6 +617,8 @@ class RiskAgent:
                 reasons.append("volatility materially exceeds target")
             if candidate.weights.get("Cash", 0) < policy.minimum_cash - 1e-6:
                 reasons.append("cash buffer below minimum")
+            if candidate.method == "adversarial_diversifier":
+                reasons.append("dissenting diversifier for ensemble use, not a standalone portfolio")
 
             if reasons:
                 rejected.append({"method": candidate.method, "reason": "; ".join(reasons)})

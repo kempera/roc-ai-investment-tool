@@ -31,6 +31,7 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
 
     approved_candidates = [candidate for candidate in candidates if candidate.method in risk.approved_portfolios]
     target_midpoint = sum(policy.target_volatility) / 2
+    borda_votes = build_borda_vote_map(candidates, policy, risk)
 
     def cio_score(candidate):
         volatility_fit = abs(candidate.expected_volatility - target_midpoint)
@@ -39,22 +40,28 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         method_preference = {
             "committee_blend": 0.025,
             "drawdown_constrained": 0.012,
+            "maximum_diversification": 0.014,
+            "tail_risk_parity": 0.010,
             "risk_parity": 0.004,
+            "maximum_entropy": 0.003,
+            "adversarial_diversifier": -0.018,
             "minimum_variance": -0.006,
             "maximum_sharpe": -0.006,
             "equal_weight_benchmark": -0.030,
         }.get(candidate.method, 0)
+        borda_adjustment = 0.035 * (borda_votes[candidate.method]["normalized_score"] - 0.50)
         return (
             candidate.expected_return
             + 0.025 * candidate.sharpe_estimate
             - 0.18 * volatility_fit
             + 0.030 * drawdown_buffer
             + 0.010 * theme_headroom
+            + borda_adjustment
             + method_preference
         )
 
     selected = sorted(approved_candidates or candidates, key=cio_score, reverse=True)[0]
-    candidate_diagnostics = build_candidate_diagnostics(candidates, risk, cio_score)
+    candidate_diagnostics = build_candidate_diagnostics(candidates, risk, cio_score, borda_votes)
 
     assumption_by_name = {asset.name: asset for asset in assumptions}
     allocations = []
@@ -88,6 +95,7 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
 
     rationale = [
         "Maps the hypothesis into diversified listed exposures instead of a single narrative bet.",
+        "Uses several portfolio construction families rather than allowing one optimizer or equal-weight benchmark to dominate.",
         "Keeps cash, bonds, and gold as portfolio stabilizers around the AI infrastructure sleeve.",
         "Rejects allocations that breach drawdown, theme concentration, or cash-buffer constraints.",
     ]
@@ -109,6 +117,7 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
     )
     allocation_check = build_allocation_check(request, policy, selected, allocations)
     risk_return_assessment = build_risk_return_assessment(request, policy, selected, allocation_check, theme_agent.provider_status)
+    process_review = build_process_review(theme_agent.provider_status, selected, candidate_diagnostics)
     pros, cons, final_judgement = critical_review(
         request=request,
         policy=policy,
@@ -126,6 +135,7 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         risk=risk,
         candidate_diagnostics=candidate_diagnostics,
         rationale=rationale,
+        process_review=process_review,
         risk_return_assessment=risk_return_assessment,
         allocation_check=allocation_check,
         pros=pros,
@@ -149,6 +159,7 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         stress_test_summary=risk.stress_test_summary,
         candidate_diagnostics=candidate_diagnostics,
         rationale=rationale,
+        process_review=process_review,
         risk_return_assessment=risk_return_assessment,
         allocation_check=allocation_check,
         pros=pros,
@@ -168,36 +179,115 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
 def reconcile_allocation_amounts(allocations: list[AllocationItem], budget: float) -> None:
     if not allocations:
         return
-    residual = round(budget - sum(item.amount for item in allocations), 2)
-    if abs(residual) < 0.01:
-        return
     cash_item = next((item for item in allocations if item.asset.lower() == "cash"), None)
     target = cash_item or max(allocations, key=lambda item: item.amount)
-    target.amount = round(target.amount + residual, 2)
+    residual_weight = round(1 - sum(item.weight for item in allocations), 4)
+    if abs(residual_weight) >= 0.0001:
+        target.weight = round(target.weight + residual_weight, 4)
+
+    residual = round(budget - sum(item.amount for item in allocations), 2)
+    if abs(residual) >= 0.01:
+        target.amount = round(target.amount + residual, 2)
 
 
 def build_candidate_diagnostics(
     candidates: list[PortfolioCandidate],
     risk: RiskReview,
     score_fn,
+    borda_votes: dict[str, dict[str, float | int]],
 ) -> list[dict[str, str | float | bool]]:
     rejection_reasons = {item["method"]: item["reason"] for item in risk.rejected_portfolios}
     diagnostics = []
     for candidate in candidates:
+        vote = borda_votes[candidate.method]
         diagnostics.append(
             {
                 "method": candidate.method,
+                "family": candidate.method_family,
                 "approved": candidate.method in risk.approved_portfolios,
+                "borda_rank": int(vote["rank"]),
+                "borda_points": round(float(vote["points"]), 2),
                 "score": round(float(score_fn(candidate)), 4),
                 "expected_return": round(candidate.expected_return, 4),
                 "expected_volatility": round(candidate.expected_volatility, 4),
                 "estimated_drawdown": round(candidate.estimated_max_drawdown, 4),
                 "sharpe": round(candidate.sharpe_estimate, 4),
+                "effective_assets": round(candidate.effective_assets, 2),
+                "diversification_ratio": round(candidate.diversification_ratio, 3),
+                "estimation_risk": round(candidate.estimation_risk, 3),
                 "theme_exposure": round(candidate.theme_exposure, 4),
                 "reason": rejection_reasons.get(candidate.method, "approved"),
             }
         )
     return sorted(diagnostics, key=lambda item: float(item["score"]), reverse=True)
+
+
+def build_borda_vote_map(
+    candidates: list[PortfolioCandidate],
+    policy: Policy,
+    risk: RiskReview,
+) -> dict[str, dict[str, float | int]]:
+    if not candidates:
+        return {}
+
+    approved = set(risk.approved_portfolios)
+    target_midpoint = sum(policy.target_volatility) / 2
+    drawdown_buffers = {
+        item.method: max(item.estimated_max_drawdown - policy.max_drawdown_tolerance, 0)
+        for item in candidates
+    }
+    criterion_values = {
+        "return": {item.method: item.expected_return for item in candidates},
+        "sharpe": {item.method: item.sharpe_estimate for item in candidates},
+        "volatility_fit": {
+            item.method: -abs(item.expected_volatility - target_midpoint) for item in candidates
+        },
+        "drawdown_buffer": drawdown_buffers,
+        "diversification": {item.method: item.diversification_ratio for item in candidates},
+        "effective_assets": {item.method: item.effective_assets for item in candidates},
+        "estimation_robustness": {item.method: -item.estimation_risk for item in candidates},
+        "ips_compliance": {item.method: 1.0 if item.method in approved else 0.0 for item in candidates},
+    }
+    criterion_weights = {
+        "return": 0.10,
+        "sharpe": 0.15,
+        "volatility_fit": 0.15,
+        "drawdown_buffer": 0.15,
+        "diversification": 0.15,
+        "effective_assets": 0.10,
+        "estimation_robustness": 0.10,
+        "ips_compliance": 0.10,
+    }
+
+    raw_points = {item.method: 0.0 for item in candidates}
+    max_rank_points = max(len(candidates) - 1, 1)
+    for criterion, values in criterion_values.items():
+        ranked = sorted(candidates, key=lambda item: values[item.method], reverse=True)
+        for rank, candidate in enumerate(ranked):
+            raw_points[candidate.method] += criterion_weights[criterion] * (max_rank_points - rank)
+
+    for candidate in candidates:
+        if candidate.method not in approved:
+            raw_points[candidate.method] -= 1.0
+        if candidate.method == "equal_weight_benchmark":
+            raw_points[candidate.method] -= 0.8
+        if candidate.method == "adversarial_diversifier":
+            raw_points[candidate.method] -= 0.6
+        if candidate.estimation_risk > 0.55:
+            raw_points[candidate.method] -= 0.3
+
+    ordered = sorted(raw_points.items(), key=lambda item: item[1], reverse=True)
+    max_points = max(raw_points.values())
+    min_points = min(raw_points.values())
+    spread = max(max_points - min_points, 1e-9)
+    return {
+        method: {
+            "points": points,
+            "normalized_score": (points - min_points) / spread,
+            "rank": rank + 1,
+        }
+        for rank, (method, points) in enumerate(ordered)
+    }
 
 
 def build_allocation_check(
@@ -212,13 +302,17 @@ def build_allocation_check(
     return_to_volatility = selected.expected_return / selected.expected_volatility if selected.expected_volatility else 0
     selected_weights = [round(weight, 4) for weight in selected.weights.values() if weight > 0.001]
     allocation_weights = [item.weight for item in allocations]
+    weights_match_selected = len(allocation_weights) == len(selected_weights) and all(
+        abs(allocation - selected_weight) <= 0.0002
+        for allocation, selected_weight in zip(allocation_weights, selected_weights)
+    )
 
     return {
         "selected_method": selected.method,
         "weight_sum": weight_sum,
         "amount_sum": amount_sum,
         "budget": round(request.budget, 2),
-        "weights_match_selected_method": allocation_weights == selected_weights,
+        "weights_match_selected_method": weights_match_selected,
         "weight_sum_ok": abs(weight_sum - 1.0) <= 0.001,
         "amount_sum_ok": abs(amount_sum - request.budget) <= max(0.05, request.budget * 0.00001),
         "volatility_within_target": policy.target_volatility[0] <= selected.expected_volatility <= policy.target_volatility[1],
@@ -268,6 +362,51 @@ def build_risk_return_assessment(
     return assessment
 
 
+def build_process_review(
+    data_provider_status: dict[str, str | int | bool | None],
+    selected: PortfolioCandidate,
+    candidate_diagnostics: list[dict[str, str | float | bool]],
+) -> list[str]:
+    diagnostics_by_method = {str(item["method"]): item for item in candidate_diagnostics}
+    selected_diagnostics = diagnostics_by_method.get(selected.method, {})
+    top_methods = [
+        str(item["method"]).replace("_", " ")
+        for item in sorted(candidate_diagnostics, key=lambda row: int(row["borda_rank"]))[:3]
+    ]
+    provider = data_provider_status.get("provider", "unknown provider")
+    process_notes = [
+        (
+            "The process now treats equal weight as a benchmark and compares it with risk parity, maximum diversification, "
+            "maximum Sharpe, drawdown-constrained, tail-risk parity, max-entropy, and adversarial-diversifier candidates."
+        ),
+        (
+            "A Borda-style vote ranks methods across expected return, Sharpe, volatility fit, drawdown buffer, diversification, "
+            "effective number of assets, estimation robustness, and IPS compliance."
+        ),
+        (
+            f"The CIO selected {selected.method.replace('_', ' ')}; its Borda rank is "
+            f"{selected_diagnostics.get('borda_rank', 'n/a')} and the top Borda methods are {', '.join(top_methods)}."
+        ),
+        (
+            "The adversarial diversifier is used as a dissenting allocation input, not as a standalone recommendation, "
+            "so overlooked hedges can enter the ensemble without dominating the answer."
+        ),
+        (
+            "The memo avoids claiming clean backtest proof because LLM-assisted research can suffer lookahead/data-contamination risk; "
+            "production quality depends on live data, logged decisions, and realised-performance review."
+        ),
+    ]
+    if provider == "Built-in universe":
+        process_notes.append(
+            "Because the built-in UCITS universe is active, Capital Market Assumptions remain conservative static inputs until Capital IQ or live market data is connected."
+        )
+    elif data_provider_status.get("fallback"):
+        process_notes.append(
+            f"{provider} fell back to the built-in universe, so the output should be treated as provisional rather than an enriched security-screen result."
+        )
+    return process_notes
+
+
 def critical_review(
     request: InvestmentRequest,
     policy: Policy,
@@ -285,6 +424,7 @@ def critical_review(
     pros = [
         f"The selected {selected.method.replace('_', ' ')} portfolio stays within the stated drawdown tolerance in the model.",
         "The recommendation is diversified across growth, defensive, and liquidity sleeves instead of relying on one security.",
+        "The final decision blends deterministic optimizers and Borda-style method review, reducing dependence on one modelling lens.",
         f"Expected volatility of {selected.expected_volatility * 100:.1f}% is inside or near the target range for a {request.risk_level} mandate.",
     ]
     if selected.sharpe_estimate > 0.20:
@@ -297,6 +437,7 @@ def critical_review(
     cons = [
         "The expected return and drawdown numbers are model estimates, not forecasts; the realised path can be materially worse.",
         "AI infrastructure exposure remains sensitive to valuation compression, earnings revisions, and semiconductor-cycle risk.",
+        "The process is stronger than a static model, but it is not a clean point-in-time backtest and must be reviewed against realised performance.",
         "The approach still requires human verification of execution venue, spreads, tax treatment, and suitability before any trade.",
     ]
     if near_drawdown_limit:

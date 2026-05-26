@@ -29,6 +29,7 @@ def render_committee_memo(
     risk: RiskReview,
     candidate_diagnostics: list[dict[str, str | float | bool]],
     rationale: list[str],
+    process_review: list[str],
     risk_return_assessment: list[str],
     allocation_check: dict[str, bool | float | str],
     pros: list[str],
@@ -66,6 +67,7 @@ def render_committee_memo(
         if item.execution_note
     )
     rationale_lines = "\n".join(f"- {item}" for item in rationale)
+    process_review_lines = "\n".join(f"- {item}" for item in process_review)
     risk_return_lines = "\n".join(f"- {item}" for item in risk_return_assessment)
     pros_lines = "\n".join(f"- {item}" for item in pros)
     cons_lines = "\n".join(f"- {item}" for item in cons)
@@ -79,10 +81,14 @@ def render_committee_memo(
         + " | ".join(
             [
                 str(item["method"]).replace("_", " "),
+                str(item.get("family", "n/a")).replace("_", " "),
                 "yes" if item["approved"] else "no",
+                str(item.get("borda_rank", "n/a")),
                 percent(float(item["expected_return"])),
                 percent(float(item["expected_volatility"])),
                 percent(float(item["estimated_drawdown"])),
+                f"{float(item.get('diversification_ratio', 0)):.2f}",
+                f"{float(item.get('effective_assets', 0)):.1f}",
                 f"{float(item['score']):.3f}",
                 str(item["reason"]),
             ]
@@ -174,9 +180,13 @@ Rejected portfolios:
 
 ## Portfolio Method Review
 
-| Method | Approved | Return | Volatility | Drawdown | CIO Score | Reason |
-| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Method | Family | Approved | Borda Rank | Return | Volatility | Drawdown | Diversification | Effective Assets | CIO Score | Reason |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 {candidate_lines}
+
+## Process Review From Paper And Literature
+
+{process_review_lines}
 
 ## Critical Review
 
