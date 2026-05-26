@@ -50,6 +50,69 @@ def get_research_universe(request: InvestmentRequest) -> tuple[list[AssetAssumpt
     return assets, provider_status("Built-in universe", True, "Using built-in UCITS/EUR universe.", len(assets))
 
 
+def check_capital_iq_api(candidate_assets: list[str] | None = None) -> dict[str, str | int | bool | None]:
+    config = _spglobal_config()
+    if not (config.get("username") and config.get("password")):
+        status = provider_status(
+            "S&P Capital IQ API",
+            False,
+            "Missing username/password for S&P Capital IQ token authentication.",
+        )
+        status.update({"ok": False, "auth_ok": False, "query_ok": False, "identifier": None})
+        return status
+
+    probe_request = InvestmentRequest(
+        investment_hypothesis="Capital IQ API connection check",
+        budget=1,
+        candidate_assets=candidate_assets or ["IBM:NYSE"],
+        universe_limit=1,
+    )
+    identifiers = _capital_iq_identifiers(probe_request, config)
+    identifier = identifiers[0] if identifiers else "IBM:NYSE"
+
+    try:
+        session = requests.Session()
+        token = _capital_iq_access_token(config, session)
+    except Exception as exc:
+        status = provider_status(
+            "S&P Capital IQ API",
+            True,
+            "Authentication failed. " + _provider_error_message(exc),
+        )
+        status.update({"ok": False, "auth_ok": False, "query_ok": False, "identifier": identifier})
+        return status
+
+    try:
+        payload = _capital_iq_clientservice_request(config, session, token, [identifier])
+        values = _extract_capital_iq_values(payload)
+    except Exception as exc:
+        status = provider_status(
+            "S&P Capital IQ API",
+            True,
+            "Authentication succeeded, but the data request failed. " + _provider_error_message(exc),
+        )
+        status.update({"ok": False, "auth_ok": True, "query_ok": False, "identifier": identifier})
+        return status
+
+    if not values:
+        status = provider_status(
+            "S&P Capital IQ API",
+            True,
+            "Authentication succeeded, but no usable data was returned. Check the identifier, mnemonics, and account entitlements.",
+        )
+        status.update({"ok": False, "auth_ok": True, "query_ok": False, "identifier": identifier})
+        return status
+
+    status = provider_status(
+        "S&P Capital IQ API",
+        True,
+        f"Authentication and Web Service Direct query succeeded for {identifier}.",
+        1,
+    )
+    status.update({"ok": True, "auth_ok": True, "query_ok": True, "identifier": identifier})
+    return status
+
+
 def _spglobal_capital_iq_universe(
     request: InvestmentRequest,
 ) -> tuple[list[AssetAssumption], dict[str, str | int | bool | None]]:

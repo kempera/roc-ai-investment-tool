@@ -8,6 +8,7 @@ import streamlit as st
 
 from src.self_driving_portfolio.engine import run_committee, run_single_asset_review
 from src.self_driving_portfolio.models import InvestmentRequest, SingleAssetRequest
+from src.self_driving_portfolio.providers import check_capital_iq_api
 from src.self_driving_portfolio.reports import render_single_asset_memo
 
 
@@ -179,6 +180,30 @@ timeout = "20"
 """,
                         language="toml",
                     )
+            st.caption("Capital IQ API probe")
+            ciq_test_identifier = st.text_input(
+                "Test identifier",
+                value="IBM:NYSE",
+                help="Use a Capital IQ identifier covered by your entitlement, for example IBM:NYSE or NVDA:NASDAQ.",
+            )
+            if st.button("Check Capital IQ API"):
+                check_status = check_capital_iq_api([ciq_test_identifier.strip()])
+                if check_status.get("ok"):
+                    st.success(check_status["message"])
+                elif check_status.get("auth_ok"):
+                    st.warning(check_status["message"])
+                else:
+                    st.error(check_status["message"])
+                st.json(
+                    {
+                        "provider": check_status.get("provider"),
+                        "configured": check_status.get("configured"),
+                        "auth_ok": check_status.get("auth_ok"),
+                        "query_ok": check_status.get("query_ok"),
+                        "identifier": check_status.get("identifier"),
+                        "message": check_status.get("message"),
+                    }
+                )
 
         st.subheader("Risk Policy")
         single_name_limit = st.slider("Single-position limit", 2, 25, 10, step=1) / 100
@@ -287,6 +312,15 @@ timeout = "20"
             st.subheader("Rationale")
             for item in result.rationale:
                 st.write(f"- {item}")
+
+            st.subheader("Critical Review")
+            st.write("**Pros**")
+            for item in result.pros:
+                st.write(f"- {item}")
+            st.write("**Cons**")
+            for item in result.cons:
+                st.write(f"- {item}")
+            st.write("**Final judgement:** " + result.final_judgement)
 
             st.subheader("Risks To Monitor")
             for item in result.risks_to_monitor:

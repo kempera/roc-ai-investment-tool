@@ -28,6 +28,9 @@ def render_committee_memo(
     allocations: list[AllocationItem],
     risk: RiskReview,
     rationale: list[str],
+    pros: list[str],
+    cons: list[str],
+    final_judgement: str,
     risks_to_monitor: list[str],
     invalid_if: list[str],
     rebalance_rule: str,
@@ -60,6 +63,8 @@ def render_committee_memo(
         if item.execution_note
     )
     rationale_lines = "\n".join(f"- {item}" for item in rationale)
+    pros_lines = "\n".join(f"- {item}" for item in pros)
+    cons_lines = "\n".join(f"- {item}" for item in cons)
     risk_lines = "\n".join(f"- {item}" for item in risks_to_monitor)
     invalidation_lines = "\n".join(f"- {item}" for item in invalid_if)
     rejected_lines = "\n".join(
@@ -132,6 +137,20 @@ Execution notes:
 Rejected portfolios:
 
 {rejected_lines}
+
+## Critical Review
+
+### Pros
+
+{pros_lines}
+
+### Cons
+
+{cons_lines}
+
+### Final Judgement
+
+{final_judgement}
 
 ## Rationale
 

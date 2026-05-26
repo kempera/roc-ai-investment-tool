@@ -120,6 +120,9 @@ class CommitteeResult(BaseModel):
     rejected_portfolios: list[dict[str, str]]
     stress_test_summary: dict[str, float | str]
     rationale: list[str]
+    pros: list[str]
+    cons: list[str]
+    final_judgement: str
     risks_to_monitor: list[str]
     invalid_if: list[str]
     rebalance_rule: str

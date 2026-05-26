@@ -10,7 +10,11 @@ if str(ROOT) not in sys.path:
 
 from src.self_driving_portfolio.engine import run_committee, run_single_asset_review
 from src.self_driving_portfolio.models import InvestmentRequest, SingleAssetRequest
-from src.self_driving_portfolio.providers import _capital_iq_assets_from_values, _extract_capital_iq_values
+from src.self_driving_portfolio.providers import (
+    _capital_iq_assets_from_values,
+    _extract_capital_iq_values,
+    check_capital_iq_api,
+)
 
 
 SPGLOBAL_ENV_KEYS = [
@@ -52,6 +56,11 @@ def main() -> None:
     assert portfolio.investment_memo.startswith("# Self-Driving Portfolio Investment Memo")
     assert portfolio.selected_method == "drawdown_constrained"
     assert portfolio.data_provider_status["provider"] == "Built-in universe"
+    assert portfolio.pros
+    assert portfolio.cons
+    assert portfolio.final_judgement
+    assert "## Critical Review" in portfolio.investment_memo
+    assert "### Final Judgement" in portfolio.investment_memo
     assert all(item.isin or item.asset == "Cash" for item in portfolio.recommended_portfolio)
     assert any(item.yahoo_url and "finance.yahoo.com" in item.yahoo_url for item in portfolio.recommended_portfolio)
 
@@ -72,6 +81,7 @@ def main() -> None:
                 data_provider="spglobal_capital_iq",
             )
         )
+        capital_iq_check = check_capital_iq_api(["IBM:NYSE"])
     finally:
         restore_env(saved_env)
 
@@ -80,6 +90,8 @@ def main() -> None:
     assert enterprise_fallback.data_provider_status.get("fallback") is True
     assert "your-token-endpoint" not in enterprise_fallback.data_provider_status["message"]
     assert "REAL_SPGLOBAL_API_HOST" not in enterprise_fallback.data_provider_status["message"]
+    assert capital_iq_check["ok"] is False
+    assert capital_iq_check["auth_ok"] is False
 
     capital_iq_payload = {
         "GDSSDKResponse": [

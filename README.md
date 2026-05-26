@@ -17,9 +17,9 @@ https://roc-ai-investment-tool-cjojrb3twn3xknxxmmkehy.streamlit.app/
 - Estimates risk and return assumptions.
 - Generates competing portfolios.
 - Applies risk constraints.
-- Produces a CIO-style recommendation with weights, EUR amounts, stress tests, invalidation rules, and rebalancing rules.
+- Produces a CIO-style recommendation with weights, EUR amounts, stress tests, balanced pros/cons, final judgement, invalidation rules, and rebalancing rules.
 - Adds execution-ready instrument identifiers including ticker, ISIN, WKN, exchange, trading currency, and Yahoo Finance quote links.
-- Supports the S&P Capital IQ API token-auth/Web Service Direct flow through secure Streamlit secrets, plus an optional custom S&P enterprise universe endpoint.
+- Supports the S&P Capital IQ API token-auth/Web Service Direct flow through secure Streamlit secrets, includes an in-app API probe, and keeps an optional custom S&P enterprise universe endpoint.
 - Evaluates individual investment ideas, including distressed opportunities.
 - Exports a Markdown investment memo and structured JSON result.
 

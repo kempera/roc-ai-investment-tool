@@ -59,6 +59,8 @@ timeout = "20"
 
 Capital IQ identifiers work best in `TICKER:EXCHANGE` format, such as `IBM:NYSE` or `NVDA:NASDAQ`. If the app input uses Yahoo tickers like `EUNL.DE`, configure `ciq_identifier_map` to translate them into your Capital IQ identifiers.
 
+After saving secrets, select **S&P Global / Capital IQ beta** in the app and click **Check Capital IQ API**. A healthy configuration returns both `auth_ok: true` and `query_ok: true`. If authentication succeeds but query fails, the most common causes are an unsupported identifier, missing mnemonic entitlement, or a custom endpoint requirement from S&P support.
+
 For a custom S&P/Capital IQ enterprise universe endpoint, set `base_url`, `universe_endpoint`, and either `api_key` or `username`/`password`. That endpoint should return JSON records with fields such as `name`, `ticker`, `isin`, `wkn`, `assetClass`, `exchange`, `currency`, `yahooTicker`, `expectedReturn`, `expectedVolatility`, `maxDrawdown`, `themeExposure`, `liquidityScore`, and `confidence`.
 
 If credentials are absent or a request fails, the app falls back to the built-in UCITS/EUR universe.
