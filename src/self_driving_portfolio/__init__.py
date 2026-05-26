@@ -1,5 +1,3 @@
-"""Self-Driving Portfolio MVP."""
+"""Self-Driving Portfolio MVP package."""
 
-from .engine import run_committee, run_single_asset_review
-
-__all__ = ["run_committee", "run_single_asset_review"]
+__all__: list[str] = []

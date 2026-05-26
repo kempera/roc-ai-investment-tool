@@ -22,6 +22,33 @@ def as_percent(value: float) -> str:
     return f"{value * 100:.1f}%"
 
 
+def format_optional_numeric_column(
+    dataframe: pd.DataFrame,
+    column: str,
+    formatter,
+) -> None:
+    if column in dataframe.columns:
+        dataframe[column] = dataframe[column].map(formatter)
+
+
+def format_method_diagnostics(dataframe: pd.DataFrame) -> pd.DataFrame:
+    display = dataframe.copy()
+    for column in [
+        "expected_return",
+        "expected_volatility",
+        "estimated_drawdown",
+        "theme_exposure",
+        "estimation_risk",
+    ]:
+        format_optional_numeric_column(display, column, as_percent)
+
+    format_optional_numeric_column(display, "score", lambda value: f"{value:.3f}")
+    format_optional_numeric_column(display, "diversification_ratio", lambda value: f"{value:.2f}")
+    format_optional_numeric_column(display, "effective_assets", lambda value: f"{value:.1f}")
+    format_optional_numeric_column(display, "borda_points", lambda value: f"{value:.2f}")
+    return display
+
+
 def json_bytes(payload) -> bytes:
     return json.dumps(payload, indent=2).encode("utf-8")
 
@@ -281,13 +308,7 @@ timeout = "20"
         st.subheader("Portfolio Method Review")
         methods_display = pd.DataFrame(result.candidate_diagnostics)
         if not methods_display.empty:
-            for column in ["expected_return", "expected_volatility", "estimated_drawdown", "theme_exposure", "estimation_risk"]:
-                methods_display[column] = methods_display[column].map(as_percent)
-            methods_display["score"] = methods_display["score"].map(lambda value: f"{value:.3f}")
-            methods_display["diversification_ratio"] = methods_display["diversification_ratio"].map(lambda value: f"{value:.2f}")
-            methods_display["effective_assets"] = methods_display["effective_assets"].map(lambda value: f"{value:.1f}")
-            methods_display["borda_points"] = methods_display["borda_points"].map(lambda value: f"{value:.2f}")
-            st.dataframe(methods_display, use_container_width=True, hide_index=True)
+            st.dataframe(format_method_diagnostics(methods_display), width="stretch", hide_index=True)
 
         st.subheader("Process Review")
         for item in getattr(result, "process_review", []):
@@ -302,7 +323,7 @@ timeout = "20"
         allocation_display = allocation[["asset", "weight", "amount"]].copy()
         allocation_display["weight"] = allocation_display["weight"].map(as_percent)
         allocation_display["amount"] = allocation_display["amount"].map(lambda value: f"{value:,.2f} {currency}")
-        st.dataframe(allocation_display, use_container_width=True, hide_index=True)
+        st.dataframe(allocation_display, width="stretch", hide_index=True)
 
         st.bar_chart(allocation.set_index("asset")["weight"] * 100)
 
@@ -323,7 +344,7 @@ timeout = "20"
         execution_display["amount"] = execution_display["amount"].map(lambda value: f"{value:,.2f} {currency}")
         st.dataframe(
             execution_display,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "asset": "Instrument",
