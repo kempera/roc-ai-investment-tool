@@ -93,6 +93,8 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         f"Rebalance {policy.rebalance_frequency} or when any position drifts more than "
         "5 percentage points from target."
     )
+    allocation_check = build_allocation_check(request, policy, selected, allocations)
+    risk_return_assessment = build_risk_return_assessment(request, policy, selected, allocation_check, theme_agent.provider_status)
     pros, cons, final_judgement = critical_review(
         request=request,
         policy=policy,
@@ -109,6 +111,8 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         allocations=allocations,
         risk=risk,
         rationale=rationale,
+        risk_return_assessment=risk_return_assessment,
+        allocation_check=allocation_check,
         pros=pros,
         cons=cons,
         final_judgement=final_judgement,
@@ -129,6 +133,8 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         rejected_portfolios=risk.rejected_portfolios,
         stress_test_summary=risk.stress_test_summary,
         rationale=rationale,
+        risk_return_assessment=risk_return_assessment,
+        allocation_check=allocation_check,
         pros=pros,
         cons=cons,
         final_judgement=final_judgement,
@@ -141,6 +147,74 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         macro_regime=macro,
         asset_assumptions=assumptions,
     )
+
+
+def build_allocation_check(
+    request: InvestmentRequest,
+    policy: Policy,
+    selected: PortfolioCandidate,
+    allocations: list[AllocationItem],
+) -> dict[str, bool | float | str]:
+    weight_sum = round(sum(item.weight for item in allocations), 6)
+    amount_sum = round(sum(item.amount for item in allocations), 2)
+    drawdown_buffer = selected.estimated_max_drawdown - policy.max_drawdown_tolerance
+    return_to_volatility = selected.expected_return / selected.expected_volatility if selected.expected_volatility else 0
+    selected_weights = [round(weight, 4) for weight in selected.weights.values() if weight > 0.001]
+    allocation_weights = [item.weight for item in allocations]
+
+    return {
+        "selected_method": selected.method,
+        "weight_sum": weight_sum,
+        "amount_sum": amount_sum,
+        "budget": round(request.budget, 2),
+        "weights_match_selected_method": allocation_weights == selected_weights,
+        "weight_sum_ok": abs(weight_sum - 1.0) <= 0.001,
+        "amount_sum_ok": abs(amount_sum - request.budget) <= max(0.05, request.budget * 0.00001),
+        "volatility_within_target": policy.target_volatility[0] <= selected.expected_volatility <= policy.target_volatility[1],
+        "drawdown_within_tolerance": selected.estimated_max_drawdown >= policy.max_drawdown_tolerance,
+        "drawdown_buffer": round(drawdown_buffer, 4),
+        "return_to_volatility": round(return_to_volatility, 4),
+        "theme_exposure": round(selected.theme_exposure, 4),
+        "theme_exposure_within_limit": selected.theme_exposure <= policy.theme_limit,
+    }
+
+
+def build_risk_return_assessment(
+    request: InvestmentRequest,
+    policy: Policy,
+    selected: PortfolioCandidate,
+    allocation_check: dict[str, bool | float | str],
+    data_provider_status: dict[str, str | int | bool | None],
+) -> list[str]:
+    drawdown_buffer = float(allocation_check["drawdown_buffer"])
+    provider = data_provider_status.get("provider", "unknown provider")
+    assessment = [
+        (
+            f"Expected return is {selected.expected_return * 100:.1f}% p.a. with {selected.expected_volatility * 100:.1f}% "
+            f"expected volatility, implying a return-to-volatility ratio of {float(allocation_check['return_to_volatility']):.2f}."
+        ),
+        (
+            f"Estimated bear drawdown is {selected.estimated_max_drawdown * 100:.1f}% versus the user limit of "
+            f"{policy.max_drawdown_tolerance * 100:.1f}%, leaving {drawdown_buffer * 100:.1f} percentage points of model buffer."
+        ),
+        (
+            f"Volatility is {'inside' if allocation_check['volatility_within_target'] else 'outside'} the target range "
+            f"of {policy.target_volatility[0] * 100:.1f}% to {policy.target_volatility[1] * 100:.1f}% for the {request.risk_level} profile."
+        ),
+        (
+            f"Theme exposure is {selected.theme_exposure * 100:.1f}% of portfolio risk budget versus a configured limit of "
+            f"{policy.theme_limit * 100:.1f}%."
+        ),
+    ]
+    if provider == "Built-in universe":
+        assessment.append(
+            "The analysis uses the built-in UCITS universe and static assumptions, so treat it as a portfolio design baseline rather than a live market forecast."
+        )
+    elif data_provider_status.get("fallback"):
+        assessment.append(
+            f"{provider} did not deliver usable data and the engine fell back to built-in assumptions."
+        )
+    return assessment
 
 
 def critical_review(

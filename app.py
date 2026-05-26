@@ -257,6 +257,31 @@ timeout = "20"
         metrics[2].metric("Bear Drawdown", as_percent(result.max_drawdown_scenario))
         metrics[3].metric("Approved Portfolios", str(len(result.approved_portfolios)))
 
+        st.subheader("Portfolio Quality Check")
+        check = result.allocation_check
+        check_cols = st.columns(5)
+        check_cols[0].metric("Selected Method", str(check.get("selected_method", "")).replace("_", " ").title())
+        check_cols[1].metric("Weight Sum", as_percent(float(check.get("weight_sum", 0))))
+        check_cols[2].metric("Amount Sum", f"{float(check.get('amount_sum', 0)):,.2f} {currency}")
+        check_cols[3].metric("Drawdown Buffer", as_percent(float(check.get("drawdown_buffer", 0))))
+        check_cols[4].metric("Return / Vol", f"{float(check.get('return_to_volatility', 0)):.2f}")
+
+        if all(
+            [
+                check.get("weights_match_selected_method"),
+                check.get("weight_sum_ok"),
+                check.get("amount_sum_ok"),
+                check.get("drawdown_within_tolerance"),
+            ]
+        ):
+            st.success("Allocation, budget, and risk-limit checks passed.")
+        else:
+            st.warning("Review allocation checks before execution.")
+
+        st.subheader("Risk / Return Evaluation")
+        for item in result.risk_return_assessment:
+            st.write(f"- {item}")
+
         allocation = pd.DataFrame([item.model_dump() for item in result.recommended_portfolio])
         st.subheader("Recommended Allocation")
         allocation_display = allocation[["asset", "weight", "amount"]].copy()

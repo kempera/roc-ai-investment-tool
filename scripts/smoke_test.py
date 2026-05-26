@@ -56,6 +56,20 @@ def main() -> None:
     assert portfolio.investment_memo.startswith("# Self-Driving Portfolio Investment Memo")
     assert portfolio.selected_method == "drawdown_constrained"
     assert portfolio.data_provider_status["provider"] == "Built-in universe"
+    weights_by_ticker = {item.ticker: item.weight for item in portfolio.recommended_portfolio}
+    assert weights_by_ticker["EUNL"] == 0.30
+    assert weights_by_ticker["VVSM"] == 0.15
+    assert weights_by_ticker["GRID"] == 0.15
+    assert weights_by_ticker["EUNA"] == 0.25
+    assert weights_by_ticker["PPFB"] == 0.10
+    assert weights_by_ticker["Cash"] == 0.05
+    assert portfolio.allocation_check["weights_match_selected_method"] is True
+    assert portfolio.allocation_check["amount_sum_ok"] is True
+    assert portfolio.allocation_check["drawdown_within_tolerance"] is True
+    assert portfolio.allocation_check["volatility_within_target"] is True
+    assert portfolio.risk_return_assessment
+    assert "## Allocation Check" in portfolio.investment_memo
+    assert "## Risk And Return Evaluation" in portfolio.investment_memo
     assert portfolio.pros
     assert portfolio.cons
     assert portfolio.final_judgement

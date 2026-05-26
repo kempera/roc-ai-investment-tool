@@ -28,6 +28,8 @@ def render_committee_memo(
     allocations: list[AllocationItem],
     risk: RiskReview,
     rationale: list[str],
+    risk_return_assessment: list[str],
+    allocation_check: dict[str, bool | float | str],
     pros: list[str],
     cons: list[str],
     final_judgement: str,
@@ -63,6 +65,7 @@ def render_committee_memo(
         if item.execution_note
     )
     rationale_lines = "\n".join(f"- {item}" for item in rationale)
+    risk_return_lines = "\n".join(f"- {item}" for item in risk_return_assessment)
     pros_lines = "\n".join(f"- {item}" for item in pros)
     cons_lines = "\n".join(f"- {item}" for item in cons)
     risk_lines = "\n".join(f"- {item}" for item in risks_to_monitor)
@@ -129,6 +132,20 @@ Execution notes:
 - Expected volatility: {percent(selected.expected_volatility)}
 - Estimated drawdown scenario: {percent(selected.estimated_max_drawdown)}
 - Sharpe estimate: {selected.sharpe_estimate:.2f}
+
+## Risk And Return Evaluation
+
+{risk_return_lines}
+
+## Allocation Check
+
+- Selected method: {str(allocation_check.get("selected_method", "n/a")).replace("_", " ")}
+- Weights sum: {float(allocation_check.get("weight_sum", 0)) * 100:.1f}%
+- Target amount sum: {money(float(allocation_check.get("amount_sum", 0)), request.currency)}
+- Budget match: {allocation_check.get("amount_sum_ok", "n/a")}
+- Weights match selected method: {allocation_check.get("weights_match_selected_method", "n/a")}
+- Drawdown within tolerance: {allocation_check.get("drawdown_within_tolerance", "n/a")}
+- Volatility within target: {allocation_check.get("volatility_within_target", "n/a")}
 
 ## Committee Result
 
