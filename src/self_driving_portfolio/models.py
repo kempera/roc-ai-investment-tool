@@ -29,6 +29,7 @@ class InvestmentRequest(BaseModel):
     use_live_data: bool = False
     data_provider: DataProvider = "builtin"
     universe_limit: int = Field(default=25, ge=1, le=100)
+    number_of_simulations: int = Field(default=2000, ge=100, le=50000)
 
     @field_validator("currency")
     @classmethod
@@ -123,6 +124,9 @@ class CommitteeResult(BaseModel):
     approved_portfolios: list[str]
     rejected_portfolios: list[dict[str, str]]
     stress_test_summary: dict[str, float | str]
+    simulation_summary: dict[str, float | int | str]
+    terminal_return_distribution: list[dict[str, float | str]]
+    drawdown_distribution: list[dict[str, float | str]]
     candidate_diagnostics: list[dict[str, str | float | bool]]
     rationale: list[str]
     process_review: list[str]

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import math
+
+import numpy as np
+
 from .agents import (
     InvestmentPolicyAgent,
     MacroRegimeAgent,
@@ -116,7 +121,15 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         "5 percentage points from target."
     )
     allocation_check = build_allocation_check(request, policy, selected, allocations)
-    risk_return_assessment = build_risk_return_assessment(request, policy, selected, allocation_check, theme_agent.provider_status)
+    simulation_summary, terminal_return_distribution, drawdown_distribution = run_stochastic_simulation(request, policy, selected)
+    risk_return_assessment = build_risk_return_assessment(
+        request,
+        policy,
+        selected,
+        allocation_check,
+        theme_agent.provider_status,
+        simulation_summary,
+    )
     process_review = build_process_review(theme_agent.provider_status, selected, candidate_diagnostics)
     pros, cons, final_judgement = critical_review(
         request=request,
@@ -133,6 +146,9 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         selected=selected,
         allocations=allocations,
         risk=risk,
+        simulation_summary=simulation_summary,
+        terminal_return_distribution=terminal_return_distribution,
+        drawdown_distribution=drawdown_distribution,
         candidate_diagnostics=candidate_diagnostics,
         rationale=rationale,
         process_review=process_review,
@@ -157,6 +173,9 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         approved_portfolios=risk.approved_portfolios,
         rejected_portfolios=risk.rejected_portfolios,
         stress_test_summary=risk.stress_test_summary,
+        simulation_summary=simulation_summary,
+        terminal_return_distribution=terminal_return_distribution,
+        drawdown_distribution=drawdown_distribution,
         candidate_diagnostics=candidate_diagnostics,
         rationale=rationale,
         process_review=process_review,
@@ -324,12 +343,102 @@ def build_allocation_check(
     }
 
 
+def run_stochastic_simulation(
+    request: InvestmentRequest,
+    policy: Policy,
+    selected: PortfolioCandidate,
+) -> tuple[
+    dict[str, float | int | str],
+    list[dict[str, float | str]],
+    list[dict[str, float | str]],
+]:
+    simulation_count = request.number_of_simulations
+    months = max(request.time_horizon_months, 1)
+    seed_material = (
+        f"{request.investment_hypothesis}|{request.budget}|{request.currency}|"
+        f"{request.time_horizon_months}|{request.risk_level}|{selected.method}|{simulation_count}"
+    )
+    seed = int(hashlib.sha256(seed_material.encode("utf-8")).hexdigest()[:16], 16) % (2**32)
+    rng = np.random.default_rng(seed)
+
+    monthly_return = (1 + selected.expected_return) ** (1 / 12) - 1
+    monthly_volatility = selected.expected_volatility / math.sqrt(12)
+    t_scale = math.sqrt(5 / 3)
+    simulated_returns = (
+        rng.standard_t(df=5, size=(simulation_count, months)) / t_scale * monthly_volatility
+        + monthly_return
+    )
+
+    shock_probability = min(0.035, 0.008 + 0.035 * selected.theme_exposure)
+    shock_mask = rng.random((simulation_count, months)) < shock_probability
+    shock_mean = -0.035 - 0.10 * selected.theme_exposure
+    shock_volatility = max(monthly_volatility, 0.015)
+    simulated_returns += shock_mask * rng.normal(
+        loc=shock_mean,
+        scale=shock_volatility,
+        size=(simulation_count, months),
+    )
+    simulated_returns = np.clip(simulated_returns, -0.70, 0.60)
+
+    paths = request.budget * np.cumprod(1 + simulated_returns, axis=1)
+    running_high = np.maximum.accumulate(np.concatenate([np.full((simulation_count, 1), request.budget), paths], axis=1), axis=1)
+    drawdowns = np.concatenate([np.full((simulation_count, 1), request.budget), paths], axis=1) / running_high - 1
+    max_drawdowns = drawdowns.min(axis=1)
+    terminal_values = paths[:, -1]
+    terminal_returns = terminal_values / request.budget - 1
+    worst_tail_cutoff = max(1, int(simulation_count * 0.05))
+    sorted_returns = np.sort(terminal_returns)
+    expected_shortfall_5 = float(np.mean(sorted_returns[:worst_tail_cutoff]))
+
+    terminal_return_distribution = build_distribution(terminal_returns, bins=16, value_type="return")
+    drawdown_distribution = build_distribution(max_drawdowns, bins=16, value_type="drawdown")
+
+    return {
+        "simulations": simulation_count,
+        "seed": seed,
+        "horizon_months": months,
+        "median_terminal_value": round(float(np.median(terminal_values)), 2),
+        "p05_terminal_value": round(float(np.percentile(terminal_values, 5)), 2),
+        "p95_terminal_value": round(float(np.percentile(terminal_values, 95)), 2),
+        "median_terminal_return": round(float(np.median(terminal_returns)), 4),
+        "p05_terminal_return": round(float(np.percentile(terminal_returns, 5)), 4),
+        "p95_terminal_return": round(float(np.percentile(terminal_returns, 95)), 4),
+        "expected_shortfall_5": round(expected_shortfall_5, 4),
+        "probability_of_loss": round(float(np.mean(terminal_returns < 0)), 4),
+        "probability_drawdown_breach": round(float(np.mean(max_drawdowns <= policy.max_drawdown_tolerance)), 4),
+        "median_max_drawdown": round(float(np.median(max_drawdowns)), 4),
+        "p05_max_drawdown": round(float(np.percentile(max_drawdowns, 5)), 4),
+        "method": "monthly Student-t Monte Carlo with rare downside shocks",
+    }, terminal_return_distribution, drawdown_distribution
+
+
+def build_distribution(values: np.ndarray, bins: int, value_type: str) -> list[dict[str, float | str]]:
+    counts, edges = np.histogram(values, bins=bins)
+    total = max(int(counts.sum()), 1)
+    rows = []
+    for index, count in enumerate(counts):
+        lower = float(edges[index])
+        upper = float(edges[index + 1])
+        midpoint = (lower + upper) / 2
+        rows.append(
+            {
+                "bucket": f"{lower * 100:.1f}% to {upper * 100:.1f}%",
+                "midpoint": round(midpoint, 4),
+                "probability": round(float(count / total), 4),
+                "count": float(count),
+                "type": value_type,
+            }
+        )
+    return rows
+
+
 def build_risk_return_assessment(
     request: InvestmentRequest,
     policy: Policy,
     selected: PortfolioCandidate,
     allocation_check: dict[str, bool | float | str],
     data_provider_status: dict[str, str | int | bool | None],
+    simulation_summary: dict[str, float | int | str],
 ) -> list[str]:
     drawdown_buffer = float(allocation_check["drawdown_buffer"])
     provider = data_provider_status.get("provider", "unknown provider")
@@ -349,6 +458,11 @@ def build_risk_return_assessment(
         (
             f"Theme exposure is {selected.theme_exposure * 100:.1f}% of portfolio risk budget versus a configured limit of "
             f"{policy.theme_limit * 100:.1f}%."
+        ),
+        (
+            f"The {int(simulation_summary['simulations']):,} stochastic simulations show a "
+            f"{float(simulation_summary['probability_of_loss']) * 100:.1f}% probability of ending below the starting budget "
+            f"and a {float(simulation_summary['probability_drawdown_breach']) * 100:.1f}% probability of breaching the drawdown limit."
         ),
     ]
     if provider == "Built-in universe":

@@ -27,6 +27,9 @@ def render_committee_memo(
     selected: PortfolioCandidate,
     allocations: list[AllocationItem],
     risk: RiskReview,
+    simulation_summary: dict[str, float | int | str],
+    terminal_return_distribution: list[dict[str, float | str]],
+    drawdown_distribution: list[dict[str, float | str]],
     candidate_diagnostics: list[dict[str, str | float | bool]],
     rationale: list[str],
     process_review: list[str],
@@ -69,6 +72,14 @@ def render_committee_memo(
     rationale_lines = "\n".join(f"- {item}" for item in rationale)
     process_review_lines = "\n".join(f"- {item}" for item in process_review)
     risk_return_lines = "\n".join(f"- {item}" for item in risk_return_assessment)
+    terminal_distribution_lines = "\n".join(
+        f"| {item['bucket']} | {float(item['probability']) * 100:.1f}% |"
+        for item in terminal_return_distribution
+    )
+    drawdown_distribution_lines = "\n".join(
+        f"| {item['bucket']} | {float(item['probability']) * 100:.1f}% |"
+        for item in drawdown_distribution
+    )
     pros_lines = "\n".join(f"- {item}" for item in pros)
     cons_lines = "\n".join(f"- {item}" for item in cons)
     risk_lines = "\n".join(f"- {item}" for item in risks_to_monitor)
@@ -159,6 +170,29 @@ Execution notes:
 ## Risk And Return Evaluation
 
 {risk_return_lines}
+
+## Stochastic Simulation
+
+- Simulations: {int(simulation_summary.get("simulations", 0)):,}
+- Horizon: {int(simulation_summary.get("horizon_months", request.time_horizon_months))} months
+- Median terminal value: {money(float(simulation_summary.get("median_terminal_value", 0)), request.currency)}
+- 5th percentile terminal value: {money(float(simulation_summary.get("p05_terminal_value", 0)), request.currency)}
+- 95th percentile terminal value: {money(float(simulation_summary.get("p95_terminal_value", 0)), request.currency)}
+- Probability of loss: {percent(float(simulation_summary.get("probability_of_loss", 0)))}
+- Probability of drawdown breach: {percent(float(simulation_summary.get("probability_drawdown_breach", 0)))}
+- 5% expected shortfall: {percent(float(simulation_summary.get("expected_shortfall_5", 0)))}
+
+Terminal return distribution:
+
+| Return bucket | Probability |
+| --- | ---: |
+{terminal_distribution_lines}
+
+Max drawdown distribution:
+
+| Drawdown bucket | Probability |
+| --- | ---: |
+{drawdown_distribution_lines}
 
 ## Allocation Check
 

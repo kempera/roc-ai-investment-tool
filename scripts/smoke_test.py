@@ -48,6 +48,7 @@ def main() -> None:
             currency="EUR",
             risk_level="balanced",
             max_drawdown_tolerance=-0.20,
+            number_of_simulations=500,
         )
     )
     assert portfolio.recommended_portfolio
@@ -79,9 +80,15 @@ def main() -> None:
     assert portfolio.allocation_check["drawdown_within_tolerance"] is True
     assert portfolio.allocation_check["volatility_within_target"] is True
     assert portfolio.risk_return_assessment
+    assert portfolio.simulation_summary["simulations"] == 500
+    assert portfolio.simulation_summary["p05_terminal_value"] < portfolio.simulation_summary["p95_terminal_value"]
+    assert portfolio.terminal_return_distribution
+    assert portfolio.drawdown_distribution
+    assert round(sum(float(item["probability"]) for item in portfolio.terminal_return_distribution), 4) == 1
     assert portfolio.process_review
     assert "## Allocation Check" in portfolio.investment_memo
     assert "## Risk And Return Evaluation" in portfolio.investment_memo
+    assert "## Stochastic Simulation" in portfolio.investment_memo
     assert "## Process Review From Paper And Literature" in portfolio.investment_memo
     assert portfolio.pros
     assert portfolio.cons
@@ -106,6 +113,7 @@ def main() -> None:
                 investment_hypothesis="AI infrastructure will outperform over 3 years",
                 budget=100000,
                 data_provider="spglobal_capital_iq",
+                number_of_simulations=500,
             )
         )
         capital_iq_check = check_capital_iq_api(["IBM:NYSE"])
@@ -150,6 +158,7 @@ def main() -> None:
             investment_hypothesis="AI infrastructure will outperform",
             budget=100000,
             candidate_assets=["NVDA:NASDAQ"],
+            number_of_simulations=500,
         ),
     )
     assert capital_iq_assets[0].name == "NVIDIA Corporation"

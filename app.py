@@ -49,6 +49,14 @@ def format_method_diagnostics(dataframe: pd.DataFrame) -> pd.DataFrame:
     return display
 
 
+def distribution_frame(distribution: list[dict[str, float | str]]) -> pd.DataFrame:
+    frame = pd.DataFrame(distribution)
+    if frame.empty:
+        return frame
+    frame["probability_pct"] = frame["probability"].astype(float) * 100
+    return frame[["bucket", "probability_pct"]]
+
+
 def json_bytes(payload) -> bytes:
     return json.dumps(payload, indent=2).encode("utf-8")
 
@@ -238,6 +246,14 @@ timeout = "20"
         minimum_cash = st.slider("Minimum cash", 0, 25, 5, step=1) / 100
         rebalance_frequency = st.selectbox("Rebalance frequency", ["monthly", "quarterly", "semiannual"], index=1)
         use_live_data = st.toggle("Try live Yahoo Finance data", value=False)
+        number_of_simulations = st.number_input(
+            "Number of simulations",
+            min_value=100,
+            max_value=50000,
+            value=2000,
+            step=500,
+            help="Monte Carlo paths used for stochastic terminal-value and drawdown evaluation.",
+        )
 
         st.info(
             "Live data is optional. If unavailable, the MVP uses conservative built-in assumptions "
@@ -265,6 +281,7 @@ timeout = "20"
             use_live_data=use_live_data,
             data_provider=data_provider,
             universe_limit=universe_limit,
+            number_of_simulations=int(number_of_simulations),
         )
 
         result = run_committee(request)
@@ -317,6 +334,27 @@ timeout = "20"
         st.subheader("Risk / Return Evaluation")
         for item in result.risk_return_assessment:
             st.write(f"- {item}")
+
+        st.subheader("Stochastic Outcome Distribution")
+        simulation = result.simulation_summary
+        simulation_cols = st.columns(5)
+        simulation_cols[0].metric("Simulations", f"{int(simulation.get('simulations', 0)):,}")
+        simulation_cols[1].metric("Median Terminal", f"{float(simulation.get('median_terminal_value', 0)):,.0f} {currency}")
+        simulation_cols[2].metric("5th Percentile", f"{float(simulation.get('p05_terminal_value', 0)):,.0f} {currency}")
+        simulation_cols[3].metric("Loss Probability", as_percent(float(simulation.get("probability_of_loss", 0))))
+        simulation_cols[4].metric("Drawdown Breach", as_percent(float(simulation.get("probability_drawdown_breach", 0))))
+
+        dist_col_1, dist_col_2 = st.columns(2)
+        with dist_col_1:
+            st.write("**Terminal return distribution**")
+            terminal_distribution = distribution_frame(result.terminal_return_distribution)
+            if not terminal_distribution.empty:
+                st.bar_chart(terminal_distribution.set_index("bucket")["probability_pct"])
+        with dist_col_2:
+            st.write("**Max drawdown distribution**")
+            drawdown_distribution = distribution_frame(result.drawdown_distribution)
+            if not drawdown_distribution.empty:
+                st.bar_chart(drawdown_distribution.set_index("bucket")["probability_pct"])
 
         allocation = pd.DataFrame([item.model_dump() for item in result.recommended_portfolio])
         st.subheader("Recommended Allocation")
