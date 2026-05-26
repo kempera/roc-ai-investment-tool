@@ -119,6 +119,7 @@ class CommitteeResult(BaseModel):
     approved_portfolios: list[str]
     rejected_portfolios: list[dict[str, str]]
     stress_test_summary: dict[str, float | str]
+    candidate_diagnostics: list[dict[str, str | float | bool]]
     rationale: list[str]
     risk_return_assessment: list[str]
     allocation_check: dict[str, bool | float | str]

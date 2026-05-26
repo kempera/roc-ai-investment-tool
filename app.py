@@ -278,6 +278,14 @@ timeout = "20"
         else:
             st.warning("Review allocation checks before execution.")
 
+        st.subheader("Portfolio Method Review")
+        methods_display = pd.DataFrame(result.candidate_diagnostics)
+        if not methods_display.empty:
+            for column in ["expected_return", "expected_volatility", "estimated_drawdown", "theme_exposure"]:
+                methods_display[column] = methods_display[column].map(as_percent)
+            methods_display["score"] = methods_display["score"].map(lambda value: f"{value:.3f}")
+            st.dataframe(methods_display, use_container_width=True, hide_index=True)
+
         st.subheader("Risk / Return Evaluation")
         for item in result.risk_return_assessment:
             st.write(f"- {item}")

@@ -34,14 +34,27 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
 
     def cio_score(candidate):
         volatility_fit = abs(candidate.expected_volatility - target_midpoint)
+        drawdown_buffer = max(candidate.estimated_max_drawdown - policy.max_drawdown_tolerance, 0)
+        theme_headroom = max(policy.theme_limit - candidate.theme_exposure, 0)
+        method_preference = {
+            "committee_blend": 0.025,
+            "drawdown_constrained": 0.012,
+            "risk_parity": 0.004,
+            "minimum_variance": -0.006,
+            "maximum_sharpe": -0.006,
+            "equal_weight_benchmark": -0.030,
+        }.get(candidate.method, 0)
         return (
             candidate.expected_return
-            + 0.04 * candidate.sharpe_estimate
-            - 0.20 * volatility_fit
-            + 0.03 * min(candidate.theme_exposure, policy.theme_limit)
+            + 0.025 * candidate.sharpe_estimate
+            - 0.18 * volatility_fit
+            + 0.030 * drawdown_buffer
+            + 0.010 * theme_headroom
+            + method_preference
         )
 
     selected = sorted(approved_candidates or candidates, key=cio_score, reverse=True)[0]
+    candidate_diagnostics = build_candidate_diagnostics(candidates, risk, cio_score)
 
     assumption_by_name = {asset.name: asset for asset in assumptions}
     allocations = []
@@ -65,6 +78,7 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
                 execution_note=assumption.execution_note if assumption else None,
             )
         )
+    reconcile_allocation_amounts(allocations, request.budget)
 
     phase_in = "Invest gradually over 3 months"
     if request.risk_level == "conservative" or selected.estimated_max_drawdown < request.max_drawdown_tolerance * 0.95:
@@ -110,6 +124,7 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         selected=selected,
         allocations=allocations,
         risk=risk,
+        candidate_diagnostics=candidate_diagnostics,
         rationale=rationale,
         risk_return_assessment=risk_return_assessment,
         allocation_check=allocation_check,
@@ -132,6 +147,7 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         approved_portfolios=risk.approved_portfolios,
         rejected_portfolios=risk.rejected_portfolios,
         stress_test_summary=risk.stress_test_summary,
+        candidate_diagnostics=candidate_diagnostics,
         rationale=rationale,
         risk_return_assessment=risk_return_assessment,
         allocation_check=allocation_check,
@@ -147,6 +163,41 @@ def run_committee(request: InvestmentRequest) -> CommitteeResult:
         macro_regime=macro,
         asset_assumptions=assumptions,
     )
+
+
+def reconcile_allocation_amounts(allocations: list[AllocationItem], budget: float) -> None:
+    if not allocations:
+        return
+    residual = round(budget - sum(item.amount for item in allocations), 2)
+    if abs(residual) < 0.01:
+        return
+    cash_item = next((item for item in allocations if item.asset.lower() == "cash"), None)
+    target = cash_item or max(allocations, key=lambda item: item.amount)
+    target.amount = round(target.amount + residual, 2)
+
+
+def build_candidate_diagnostics(
+    candidates: list[PortfolioCandidate],
+    risk: RiskReview,
+    score_fn,
+) -> list[dict[str, str | float | bool]]:
+    rejection_reasons = {item["method"]: item["reason"] for item in risk.rejected_portfolios}
+    diagnostics = []
+    for candidate in candidates:
+        diagnostics.append(
+            {
+                "method": candidate.method,
+                "approved": candidate.method in risk.approved_portfolios,
+                "score": round(float(score_fn(candidate)), 4),
+                "expected_return": round(candidate.expected_return, 4),
+                "expected_volatility": round(candidate.expected_volatility, 4),
+                "estimated_drawdown": round(candidate.estimated_max_drawdown, 4),
+                "sharpe": round(candidate.sharpe_estimate, 4),
+                "theme_exposure": round(candidate.theme_exposure, 4),
+                "reason": rejection_reasons.get(candidate.method, "approved"),
+            }
+        )
+    return sorted(diagnostics, key=lambda item: float(item["score"]), reverse=True)
 
 
 def build_allocation_check(

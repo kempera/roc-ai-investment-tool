@@ -27,6 +27,7 @@ def render_committee_memo(
     selected: PortfolioCandidate,
     allocations: list[AllocationItem],
     risk: RiskReview,
+    candidate_diagnostics: list[dict[str, str | float | bool]],
     rationale: list[str],
     risk_return_assessment: list[str],
     allocation_check: dict[str, bool | float | str],
@@ -73,6 +74,22 @@ def render_committee_memo(
     rejected_lines = "\n".join(
         f"- {item['method']}: {item['reason']}" for item in risk.rejected_portfolios
     ) or "- None"
+    candidate_lines = "\n".join(
+        "| "
+        + " | ".join(
+            [
+                str(item["method"]).replace("_", " "),
+                "yes" if item["approved"] else "no",
+                percent(float(item["expected_return"])),
+                percent(float(item["expected_volatility"])),
+                percent(float(item["estimated_drawdown"])),
+                f"{float(item['score']):.3f}",
+                str(item["reason"]),
+            ]
+        )
+        + " |"
+        for item in candidate_diagnostics
+    )
     provider = data_provider_status or {}
     provider_lines = "\n".join(
         [
@@ -154,6 +171,12 @@ Execution notes:
 Rejected portfolios:
 
 {rejected_lines}
+
+## Portfolio Method Review
+
+| Method | Approved | Return | Volatility | Drawdown | CIO Score | Reason |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+{candidate_lines}
 
 ## Critical Review
 
